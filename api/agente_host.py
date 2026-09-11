@@ -76,13 +76,27 @@ def _docker(*args: str, timeout: float = 60) -> subprocess.CompletedProcess:
 
 
 def _estado(container: str) -> str | None:
-    """'running' | 'stopped' | None (container ausente/docker fora)."""
+    """Status cru do docker: 'running', 'exited', 'created', 'dead'… (None
+    = container ausente/docker fora). ⚠️ NÃO existe 'stopped' — comparação
+    ingênua com ele fazia o /llm/ligar pular o docker start (bug REAL: a
+    API chamou, o agente respondeu 200 e o container continuou 'exited')."""
     try:
         r = _docker("inspect", "-f", "{{.State.Status}}", container, timeout=15)
         saida = (r.stdout or "").strip()
         return saida if r.returncode == 0 and saida else None
     except Exception:
         return None
+
+
+def _ligado(container: str) -> bool:
+    return _estado(container) == "running"
+
+
+def _parado(container: str) -> bool:
+    """Existe e NÃO serve (exited/created/dead) — seguro dar docker start.
+    None (docker fora/alvo ausente) NÃO é 'parado': sem certeza, não mexe."""
+    return _estado(container) not in (
+        None, "running", "restarting", "paused", "removing")
 
 
 def _saudavel(container: str) -> bool:
@@ -169,9 +183,9 @@ class AtivarIn(BaseModel):
 @app.api_route("/saude", methods=["GET", "POST"])
 def saude():
     return {"ok": True,
-            "chat": _alias_chat() if _estado(LLM_CONTAINER) == "running" else None,
+            "chat": _alias_chat() if _ligado(LLM_CONTAINER) else None,
             "chat_container": _estado(LLM_CONTAINER),
-            "embed": _estado(EMBED_CONTAINER) == "running" and _saudavel(EMBED_CONTAINER),
+            "embed": _ligado(EMBED_CONTAINER) and _saudavel(EMBED_CONTAINER),
             "embed_container": _estado(EMBED_CONTAINER),
             "ocioso_s": _ocioso_s()}
 
@@ -180,7 +194,7 @@ def saude():
 def llm_ligar():
     """Ergue o container do chat e VOLTA NA HORA (two-step: a carga de ~90 s
     estouraria o timeout da borda — quem chama faz polling no túnel)."""
-    if _estado(LLM_CONTAINER) == "stopped":
+    if _parado(LLM_CONTAINER):
         r = _docker("start", LLM_CONTAINER, timeout=60)
         if r.returncode != 0:
             return {"ok": False, "erro": (r.stderr or "docker start falhou")[:200]}
@@ -200,7 +214,7 @@ def llm_derrubar():
 def embed_garantir():
     """Embedding SEMPRE no ar (pedido do dono) — religa e espera o health
     (carga <75 s; o chamador VPS aceita esperar até 180 s)."""
-    if _estado(EMBED_CONTAINER) != "running":
+    if _parado(EMBED_CONTAINER):
         r = _docker("start", EMBED_CONTAINER, timeout=60)
         if r.returncode != 0:
             return {"ok": False, "erro": (r.stderr or "docker start falhou")[:200]}
@@ -218,7 +232,7 @@ def ativar(body: AtivarIn):
     """Compat com a troca de modelo da UI — em containers o modelo é fixo do
     compose: serve para RELIGAR o container; alias divergente falha claro
     (trocar = editar o compose da estação e recriar o serviço llm)."""
-    if _estado(LLM_CONTAINER) == "running":
+    if _ligado(LLM_CONTAINER):
         atual = _alias_chat()
         if atual and atual.lower() != body.modelo.lower():
             return {"ok": False,
@@ -238,7 +252,7 @@ def _marcar_atividade() -> None:
 
 
 def _ocioso_s() -> int | None:
-    if _estado(LLM_CONTAINER) != "running":
+    if not _ligado(LLM_CONTAINER):
         return None
     return int(time.time() - _ultima_atividade["t"])
 
@@ -248,12 +262,12 @@ def _varrer() -> None:
     while True:
         try:
             # 1. embedding SEMPRE no ar (docker stop manual / queda)
-            if _estado(EMBED_CONTAINER) == "stopped":
+            if _parado(EMBED_CONTAINER):
                 _docker("start", EMBED_CONTAINER, timeout=60)
                 print(f"🧬 {EMBED_CONTAINER} religado (regra: sempre ativo)")
 
             # 2. chat: ocioso (métricas paradas E nada em voo) → derruba
-            if _estado(LLM_CONTAINER) == "running":
+            if _ligado(LLM_CONTAINER):
                 m = _metricas_get()
                 if m is None:
                     _marcar_atividade()   # subindo/métricas fora ≠ ocioso
@@ -280,7 +294,7 @@ def _boot():
     # sem spawns nativos: o boot só GARANTE o embedding (regra "sempre
     # ativo") — o chat nasce quando a primeira chamada chegar
     def _garantir_embed_boot():
-        if _estado(EMBED_CONTAINER) == "stopped":
+        if _parado(EMBED_CONTAINER):
             _docker("start", EMBED_CONTAINER, timeout=60)
             print(f"🧬 boot: {EMBED_CONTAINER} religado (sempre ativo)")
     try:
