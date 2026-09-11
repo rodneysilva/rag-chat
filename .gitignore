@@ -2,6 +2,10 @@
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# artefatos de deploy local (compose/segredos/estado por máquina — nada disso no git)
+deploy/
 
 # front
 node_modules/
