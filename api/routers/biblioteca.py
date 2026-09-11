@@ -373,20 +373,6 @@ def hx_resolucao(request: Request, problema: str = Form(...),
         return HTMLResponse(f"<p class='erro-texto'>{e}</p>")
 
 
-@router.post("/hx/recategorizar")
-def hx_recategorizar(request: Request):
-    """🧠 Re-analisa TODA a biblioteca com a LLM (área/categoria/descrição
-    de cada coleção no catálogo) — job com log ao vivo."""
-    try:
-        r = _manutencao_disparar("analisar")
-        return TEMPLATES.TemplateResponse(
-            request, "_job.html",
-            {"request": request, "kind": "manutencao", "job": r.get("job"),
-             "rotulo": "recategorizar biblioteca", "linhas": [], "running": True})
-    except Exception as e:
-        return HTMLResponse(f"<p class='erro-texto'>{e}</p>")
-
-
 @router.post("/hx/enriquecer/{nome}")
 def hx_enriquecer(nome: str, request: Request):
     """✨ Enriquece UMA coleção: a LLM re-lê amostras e regenera

@@ -130,15 +130,6 @@ def pagina_biblioteca(request: Request):
                                     if n in COLECOES_SISTEMA)
     except Exception:
         ctx["bib_ocultas"] = []
-    # ── grupos por categoria do catálogo (linha "sem categoria" no fim) ──
-    grupos: dict[str, list] = {}
-    for c in cols:
-        cat = (c.get("categoria") or "").strip() or "sem categoria"
-        grupos.setdefault(cat, []).append(c)
-    ctx["bib_grupos"] = sorted(
-        grupos.items(),
-        key=lambda kv: (kv[0] == "sem categoria",
-                        -sum((c.get("points") or 0) for c in kv[1])))
     # ═══ JOBS ATIVOS voltam com a página (a pesquisa não "some" ao navegar):
     # qualquer pesquisa/preview em andamento é re-injetada no topo com o
     # partial de polling — o estado vive no registry, não no DOM. ═══

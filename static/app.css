@@ -858,11 +858,6 @@ figure.cod code { background: none; padding: 0; border: 0;
   background: var(--card); }
 .kpi b { color: var(--texto); font-variant-numeric: tabular-nums; }
 .kpi-suave { opacity: .8; cursor: help; }
-.bib-grupo { margin: .4rem 0 .8rem; }
-.bib-grupo > summary { font-weight: 600; font-size: .9rem; padding: .25rem 0;
-  display: flex; gap: .6rem; align-items: baseline; cursor: pointer; }
-.bib-grupo > summary::marker { color: var(--acento); }
-.bib-grupo .colecoes-cards { margin-top: .5rem; }
 
 /* == EDICAO de documento (Biblioteca): textarea com o texto completo ==
    (antes vivia DEPOIS do {% endblock %} do template — CSS morto) */
