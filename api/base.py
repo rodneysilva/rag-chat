@@ -1868,7 +1868,13 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             # ⚡ TOP-8 (era 15): ~1 s/par na CPU de 2 vCPUs da VPS — 15 pares
             # eram 15 s por pergunta; o top-4 sai de 8 candidatos fácil e o
             # gate fraco revalida os MESMOS 8 (cache de pares = grátis).
-            if body.mode in ("rag", "hibrido") and len(achados) >= 6:
+            # ⚡ RAG PURO reranka SEMPRE (≥2, pedido do dono 12/09: "mais
+            # certeiro"): aqui a ORDEM do digest É a resposta — sem o
+            # cross-encoder bilíngue a busca densa deprimia PT×EN e o dono
+            # "fazia uma pergunta e recebia outra". Custo: CPU da VPS.
+            if body.mode in ("rag", "hibrido") and (
+                    len(achados) >= 6
+                    or (body.mode == "rag" and len(achados) >= 2)):
                 rr = rerank.rerank(pergunta_busca, achados[:8], top_n=4,
                                    log=lambda m, g="busca": log(m, g))
                 if rr:
@@ -2175,7 +2181,7 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             "PURO: LLM de conversa não consultada", "geração")
         if found:
             contadores.set_etapa("resposta (rag)")
-            answer = rag.digest_rag(docs)
+            answer = rag.digest_rag(body.question, docs)
             contadores.set_etapa(None)
         else:
             # spec restritiva (F2-8): SEM contexto não há o que responder —

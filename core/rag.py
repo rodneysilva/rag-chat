@@ -509,15 +509,87 @@ def answer(question, docs, history=None, bases=None, on_token=None):
                   on_token)
 
 
-def digest_rag(docs, limite: int = 4) -> str:
+# ─── digest do modo rag PURO: limpeza de detritos + recorte do trecho ───
+# (pedido do dono 12/09: "<sup> aparecendo", fragmento-monstro inteiro e
+# "fiz uma pergunta e ele me deu outra resposta")
+_RE_SUP = re.compile(r"<sup\b[^>]*>.*?</sup>|<sup\b[^>]*/?>|</sup>",
+                     re.I | re.S)
+_RE_REF = re.compile(r"<ref\b[^>]*(?:/>|>.*?</ref>)|</ref>", re.I | re.S)
+_RE_NOTA = re.compile(
+    r"\s*\[(?:\d{1,3}|[a-z]|nota [^\]\n]{1,24}"
+    r"|cita[çc][ãa]o necess[áa]ria|citation needed)\]", re.I)
+_STOP_DIGEST = frozenset(
+    "a o as os um uma uns umas de do da das dos e em no na nos nas por para "
+    "com que qual quais quanto quando onde como quem cuja ao aos à às é foi "
+    "ser está esta são the of and or an in on for to with is are was were "
+    "be been this that it its as at by from which also known made".split())
+
+
+def _digest_termos(texto: str) -> set[str]:
+    """Termos normalizados (minúsculos, sem acento) fora das stopwords."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", texto or "")
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn").lower()
+    return {w for w in re.findall(r"[a-z0-9]{3,}", t)
+            if w not in _STOP_DIGEST}
+
+
+def _eh_portugues(texto: str) -> bool:
+    """Heurística leve (sem LLM): palavras funcionais PT × EN na amostra."""
+    t = (texto or "").lower()[:2000]
+    pt = len(re.findall(r"\b(?:que|não|nao|uma|com|para|dos|das|mais|como|"
+                        r"está|são|sao|pelo|pela|seu|sua|então|entao)\b", t))
+    en = len(re.findall(r"\b(?:the|and|with|from|this|that|which|also|"
+                        r"known|made|after|being|there)\b", t))
+    return pt > en
+
+
+def _digest_trecho(txt: str, termos: set[str], pergunta_pt: bool,
+                   max_chars: int = 900) -> str:
+    """Recorta o PARÁGRAFO mais parecido com a pergunta (± vizinhos enquanto
+    cabe). Sem LLM, "mais certeiro" = sobreposição de termos + preferência
+    pelo idioma da pergunta; trecho já curto sai inteiro."""
+    if len(txt) <= max_chars:
+        return txt
+    parags = [p.strip() for p in re.split(r"\n\s*\n", txt) if p.strip()]
+    if not parags:
+        return txt[:max_chars].rsplit(" ", 1)[0] + "…"
+    melhor, melhor_pontos = 0, -1.0
+    for n, p in enumerate(parags):
+        pontos = float(len(_digest_termos(p) & termos))
+        if pergunta_pt and len(p) >= 80:
+            if _eh_portugues(p):
+                pontos += 1.0        # mesmo idioma da pergunta: sobe
+            else:
+                pontos -= 0.5        # idioma diverso: leve desconto
+        if len(p) < 80:
+            pontos *= 0.5            # linha solta pesa menos que parágrafo
+        if pontos > melhor_pontos:
+            melhor, melhor_pontos = n, pontos
+    if melhor_pontos <= 0:
+        melhor = 0                    # nada casou: começa do topo do trecho
+    ini, fim = melhor, melhor + 1
+    while ini > 0 and len("\n\n".join(parags[ini - 1:fim])) <= max_chars * 0.6:
+        ini -= 1                      # um pouco de contexto ANTERIOR cabe
+    out = "\n\n".join(parags[ini:fim]).strip()
+    if len(out) > max_chars:
+        out = out[:max_chars].rsplit(" ", 1)[0] + "…"
+    return ("…" if ini > 0 else "") + out + ("…" if fim < len(parags) else "")
+
+
+def digest_rag(question, docs, limite: int = 4) -> str:
     """Modo rag PURO (pedido do dono 11/09: "quando seleciono só a base, não
     precisa consultar a llm, somente o embedding"): a resposta É o digest dos
     fragmentos recuperados — generaliza a resposta-direta (SCORE_DIRETO) para
     qualquer score, sem NENHUMA chamada à LLM de conversa.
 
-    Os fragmentos já vêm ordenados (rerank rodou antes); a sanitização é a
-    mesma da resposta-direta (HTML cru vira texto, header de chunk sai)."""
+    Os fragmentos já vêm ordenados (rerank rodou antes). Cada um entra com:
+    cabeçalho numerado + TÍTULO + coleção; detritos de citação da Wikipédia
+    (<sup>, <ref>, [12]) removidos; e apenas o TRECHO mais parecido com a
+    pergunta (parágrafo ± vizinhos) — não a seção inteira."""
     from . import limpeza as _limpeza
+    termos = _digest_termos(question)
+    pergunta_pt = _eh_portugues(question)
     partes = []
     for i, d in enumerate(docs[:limite], 1):
         txt = (d.page_content or "").strip()
@@ -529,11 +601,23 @@ def digest_rag(docs, limite: int = 4) -> str:
         except Exception:
             pass  # sanitização falhou = entrega o texto cru (blinda o fluxo)
         # header "[título contextual]" do chunk é METADADO de indexação — fora
-        txt = re.sub(r"^\s*\[[^\]\n]{1,140}\][ \t]*\r?\n", "", txt, count=1).strip()
+        txt = re.sub(r"^\s*\[[^\]\n]{1,140}\][ \t]*\r?\n", "", txt, count=1)
+        # detritos de citação (o _md_basico ESCAPA html — <sup> virava texto
+        # visível na resposta, bug real visto em produção 12/09)
+        txt = _RE_SUP.sub(" ", txt)
+        txt = _RE_REF.sub(" ", txt)
+        txt = _RE_NOTA.sub("", txt)
+        txt = re.sub(r"[ \t]{2,}", " ", txt)
+        txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
+        trecho = _digest_trecho(txt, termos, pergunta_pt)
+        titulo = (d.metadata.get("titulo") or "").strip()
         colecao = d.metadata.get("colecao", "")
         area = d.metadata.get("area", "")
         origem = " · ".join(x for x in (colecao, area) if x)
-        partes.append(f"**[{i}]**{f' ({origem})' if origem else ''}\n\n{txt}")
+        cab = f"**{i} · {titulo}**" if titulo else f"**{i}**"
+        if origem:
+            cab += f" — {origem}"
+        partes.append(cab + "\n\n" + trecho)
     return "\n\n---\n\n".join(partes)
 
 

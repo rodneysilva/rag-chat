@@ -67,7 +67,7 @@ def test_rag_puro_responde_sem_acordar_a_llm(cenario):
                                  collections=["c"]))
     assert r["mode"] == "rag"
     # resposta = digest dos fragmentos (não síntese de LLM)
-    assert "vatapá" in r["answer"] and "[1]" in r["answer"]
+    assert "vatapá" in r["answer"] and "**1**" in r["answer"]
     # header de chunk é metadado de indexação — não aparece na resposta
     assert "[vatapá passo a passo]" not in r["answer"]
     assert len(r["docs"]) == 2
@@ -104,24 +104,36 @@ def test_rag_puro_frago_nao_zera_a_base(cenario, monkeypatch):
     fracos = [(_doc("Fragmento medíocre sobre culinária."), 0.50, "c"),
               (_doc("Outro fragmento medíocre."), 0.48, "c")]
     monkeypatch.setattr(rag, "search", lambda *a, **kw: (fracos, {}))
-    monkeypatch.setattr(base.rerank, "notas_de",
-                        lambda *a, **kw: (_ for _ in ()).throw(
-                            RuntimeError("sem rerank no teste")))
+    monkeypatch.setattr(base.rerank, "rerank", lambda *a, **kw: None)
     r = _processar_query(QueryIn(question="o que é o vatapá?", mode="rag",
                                  collections=["c"]))
     assert len(r["docs"]) == 2            # nada descartado: a base responde
     assert "culinária" in r["answer"]
 
 
-def test_digest_rag_sanitiza_e_numera():
+def test_digest_rag_sanitiza_recorta_e_numera():
+    """Pedido do dono 12/09: '<sup> aparecendo', fragmento-monstro inteiro e
+    resposta de outra pergunta — o digest limpa detritos de citação, cabeça
+    com o TÍTULO e recorta o parágrafo mais parecido com a pergunta."""
     from core import rag
+    gigante = (
+        "A cozinha da região Norte do Brasil reúne pratos típicos e "
+        "tradições indígenas de vários estados amazônicos. " * 12 + "\n\n"
+        "O vatapá é um prato paraense à base de dendê, pão e camarão seco, "
+        "servido com arroz branco e farinha.<sup> </sup>\n\n"
+        "Sobremesas regionais variam de cidade a cidade e seguem receitas "
+        "de família passadas de geração em geração. " * 8
+    )
     docs = [
-        _doc("[cabeçalho contextual do chunk]\nConteúdo real do fragmento.",
-             colecao="culinaria"),
-        _doc("", colecao="c"),  # vazio não ocupa número
+        Document(page_content="[vatapá passo a passo]\n" + gigante,
+                 metadata={"colecao": "culinaria", "titulo": "Vatapá"}),
+        Document(page_content="", metadata={}),  # vazio não ocupa número
     ]
-    out = rag.digest_rag(docs)
-    assert "[cabeçalho contextual do chunk]" not in out
-    assert "Conteúdo real do fragmento." in out
-    assert out.startswith("**[1]** (culinaria)")
-    assert "[2]" not in out
+    out = rag.digest_rag("o que é o vatapá?", docs)
+    assert "<sup>" not in out                     # detrito de citação fora
+    assert "[vatapá passo a passo]" not in out    # header de chunk fora
+    assert "**1 · Vatapá**" in out                # título no cabeçalho
+    assert "culinaria" in out                     # coleção no cabeçalho
+    assert "prato paraense" in out                # recortou o parágrafo CERTO
+    assert "Sobremesas regionais" not in out      # …não o trecho inteiro
+    assert "**2" not in out                       # vazio não ganhou número
