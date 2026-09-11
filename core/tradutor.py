@@ -2,8 +2,9 @@
 
 Pedido do dono 12/09 ("o retorno tem partes em português e outras em
 inglês"): sem LLM não há tradução criativa — mas o trecho pode passar por
-um modelinho seq2seq DEDICADO a traduzir (74M params, ~300 MB), na MESMA
-stack do reranker (torch+transformers, CPU, cache do HF em volume).
+um modelinho seq2seq DEDICADO a traduzir (Marian ~110M params, ~450 MB em
+safetensors), na MESMA stack do reranker (torch+transformers, CPU, cache
+do HF em volume).
 
 Contrato espelha o core/rerank.py: carregamento LAZY, residente em CPU,
 degradação em silêncio (None/item → o chamador mostra o original —
@@ -56,7 +57,7 @@ def traduzir_lote(textos: list[str], log=print,
                 "fragmentos ficam no idioma original", "busca")
         return None
     modelo = modelo or getattr(config, "TRADUTOR_MODEL",
-                               "Helsinki-NLP/opus-mt-en-PT")
+                               "Helsinki-NLP/opus-mt-tc-big-en-pt")
     try:
         if modelo not in _modelos:
             _carregar(modelo, log)

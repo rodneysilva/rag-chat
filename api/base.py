@@ -344,10 +344,12 @@ def _preaquecer_modelos() -> None:
         try:
             from core import tradutor as _tradutor
             if _tradutor.disponivel() and getattr(config, "TRADUTOR", True):
-                _tradutor.traduzir("kitchen",
-                                   log=lambda m, g="": print(f"⇄ {m}"))
-                print("⇄ tradutor pré-aquecido no boot — trechos EN saem "
-                      "traduzidos sem pagar a 1ª carga")
+                # o resultado confere sucesso DE VERDADE — traduzir devolve
+                # None em erro engolido e o "pré-aquecido" não pode mentir
+                if _tradutor.traduzir("kitchen",
+                                      log=lambda m, g="": print(f"⇄ {m}")):
+                    print("⇄ tradutor pré-aquecido no boot — trechos EN "
+                          "saem traduzidos sem pagar a 1ª carga")
         except Exception as e:
             print(f"⇄ pré-aquecimento do tradutor pulado: {str(e)[:80]}")
     threading.Thread(target=_aq, daemon=True,
@@ -993,7 +995,7 @@ _DICAS_CAMPO = {
     "RERANKER": "1 = reordena os achados com cross-encoder local (precisão melhor, +~2 s por busca). 0 = desliga.",
     "RERANK_MODEL": "Modelo do reranker no HuggingFace. base = leve (1,1 GB); v2-m3 = melhor em PT (2,3 GB) — compare no bench antes de trocar.",
     "TRADUTOR": "1 = trechos EN do digest rag saem em PT (opus-mt local na CPU, ~300 MB). 0 = desliga (fica no idioma original).",
-    "TRADUTOR_MODEL": "Modelo do tradutor (HuggingFace, seq2seq). Padrão opus-mt-en-PT — só troque por outro Marian EN→PT.",
+    "TRADUTOR_MODEL": "Modelo do tradutor (HuggingFace, Marian EN→PT). Padrão opus-mt-tc-big-en-pt (~450 MB) — só troque por outro Marian EN→PT.",
 }
 
 

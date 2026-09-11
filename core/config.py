@@ -99,9 +99,10 @@ FIELDS = {
                        "silêncio: sem torch, o texto fica no original)",
                        "int"),
     "TRADUTOR_MODEL": ("Aplicação",
-                       "Modelo do tradutor (HuggingFace, seq2seq Marian). "
-                       "Padrão Helsinki-NLP/opus-mt-en-PT (74M, EN→PT)",
-                       "text"),
+                       "Modelo do tradutor (HuggingFace, seq2seq Marian "
+                       "EN→PT). Padrão Helsinki-NLP/opus-mt-tc-big-en-pt "
+                       "(~110M, safetensors ~450 MB — o opus-mt-en-PT "
+                       "antigo saiu do catálogo do HF)", "text"),
 }
 
 # chaves cujo valor é SEGREDO: exibidas mascaradas e nunca regravadas
@@ -138,7 +139,7 @@ MOCK_LLM = False
 RERANKER = True
 RERANK_MODEL = "BAAI/bge-reranker-base"
 TRADUTOR = True
-TRADUTOR_MODEL = "Helsinki-NLP/opus-mt-en-PT"
+TRADUTOR_MODEL = "Helsinki-NLP/opus-mt-tc-big-en-pt"
 
 
 def set_env(chave: str, valor: str) -> None:
@@ -233,8 +234,8 @@ def reload():
     RERANKER = _bool_env("RERANKER", True)
     RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base").strip()
     TRADUTOR = _bool_env("TRADUTOR", True)
-    TRADUTOR_MODEL = os.getenv("TRADUTOR_MODEL",
-                               "Helsinki-NLP/opus-mt-en-PT").strip()
+    TRADUTOR_MODEL = os.getenv(
+        "TRADUTOR_MODEL", "Helsinki-NLP/opus-mt-tc-big-en-pt").strip()
 
 
 def as_dict():
