@@ -3,11 +3,102 @@
 {% block conteudo %}
 <div class="pagina-conteudo">
 
-<h1>Adicionar conhecimento</h1>
-<p class="descricao">Uma entrada; todo caminho termina na <b>revisão</b> — você vê cada documento
-(como veio × como vai entrar), duplicados, categorias e o score de aderência, e aplica só o aprovado.</p>
+{# ═══ REESTRUTURAÇÃO (11/09): a página chama BIBLIOTECA — as coleções
+   vêm PRIMEIRO (KPIs + grupos por categoria); a aquisição virou a 2ª
+   seção e o resto (manutenção, ensinar, MCP) recolhe em details.
+   Os botões de ação do card agora QUEBRAM linha (.cc-acoes wrap no
+   app.css) — antes transbordavam e "sumiam" no card estreito. #}
+
+<header class="bib-cab">
+  <div>
+    <h1>Biblioteca</h1>
+    <p class="descricao">Sua base de conhecimento: coleções do Qdrant com
+      curadoria — tudo que entra passa pela <b>revisão</b>.</p>
+  </div>
+  <div class="bib-kpis">
+    <span class="kpi"><b>{{ bib_kpis.colecoes }}</b> coleções</span>
+    <span class="kpi"><b>{{ bib_kpis.pontos_fmt }}</b> pontos</span>
+    {% if bib_ocultas %}
+    <span class="kpi kpi-suave" title="{{ bib_ocultas | join(', ') }} — internas do sistema ou legado do projeto original (Qdrant compartilhado). Sem uso no seletor/chat.">
+      +{{ bib_ocultas | length }} de sistema ocultas ℹ️</span>
+    {% endif %}
+  </div>
+</header>
+
+{# ═══ JOBS ATIVOS: re-injetados ao voltar à página (a pesquisa não some) #}
+<div id="executando">
+  {% for j in jobs_ativos %}
+  <div id="job-{{ j.job }}" class="cartao" style="padding:.8rem;"
+       hx-get="/hx/job/{{ j.kind }}/{{ j.job }}" hx-trigger="every 1500ms" hx-swap="outerHTML">
+    <div class="resumo-job"><span class="ponto" style="display:inline-block;"></span>
+      {{ j.rotulo }} — em andamento…</div>
+  </div>
+  {% endfor %}
+</div>
 
 <section class="cartao">
+  <div class="linha" style="align-items:center; margin-bottom:.6rem;">
+    <h2 style="margin:0; flex:0 0 auto;">📚 Coleções</h2>
+    <div style="flex:1; min-width:min(100%,12rem); max-width:20rem;">
+      <input type="text" id="filtro-colecao" placeholder="🔎 filtrar por nome/categoria…" style="padding:.35rem .55rem; font-size:.85rem;">
+    </div>
+    <div class="estreito" style="flex:0 0 auto;">
+      <button hx-post="/hx/recategorizar" hx-target="#executando" hx-swap="afterbegin"
+              title="a LLM re-analisa TODA a biblioteca: área, categoria e descrição de cada coleção">
+        🧠 recategorizar com IA</button>
+    </div>
+  </div>
+
+  {# GRUPOS por categoria do catálogo — "sem categoria" sempre no fim.
+     <details open>: recolhível, mas nasce aberto (ver tudo). #}
+  {% for categoria, cols in bib_grupos %}
+  <details class="bib-grupo" open>
+    <summary class="link-suave">
+      {{ categoria }}
+      <span class="mini">{{ cols | length }} coleç{{ 'ão' if cols|length == 1 else 'ões' }}
+        · {{ (cols | map(attribute='points') | select | sum) | default(0) }} pts</span>
+    </summary>
+    <div class="colecoes-cards">
+      {% for c in cols %}
+      <div class="colecao-card linha-colecao" data-busca="{{ c.nome }} {{ c.categoria or '' }} {{ c.descricao or '' }}">
+        <div class="cc-topo">
+          <b class="cc-nome">{{ c.nome }}</b>
+          <span class="cc-pts">{{ c.points }} pts</span>
+        </div>
+        <p class="cc-cat">{{ c.categoria or "—" }}</p>
+        <p class="cc-desc">{{ (c.descricao or "")[:140] }}</p>
+        <div class="cc-acoes">
+          <button onclick="alternarDocs(this, '{{ c.nome | e }}')"
+                  data-aberto="0"
+                  title="documentos da coleção (nomes, pedaços, prévia)">📄 documentos</button>
+          <button hx-post="/hx/enriquecer/{{ c.nome }}" hx-target="#executando" hx-swap="afterbegin"
+                  title="a LLM re-lê amostras e regenera área/categoria/descrição">✨ enriquecer</button>
+          <button type="button" onclick="snapshotColecao('{{ c.nome | e }}', this)"
+                  title="fotografa id+vetor+payload da coleção agora (restaurável no cartão de snapshots)">📸 snapshot</button>
+          <button type="button" onclick="higienizarColecao('{{ c.nome | e }}', this)"
+                  title="limpeza determinística: frases reconstituídas, ruído e duplicados fora, re-embed no mesmo id">🧹 higienizar</button>
+          <button class="perigo" hx-post="/hx/colecao/{{ c.nome }}/apagar"
+                  hx-target="#executando" hx-swap="afterbegin"
+                  hx-confirm="apagar {{ c.nome }} inteira? (sem volta)">🗑 apagar</button>
+        </div>
+        {# ACCORDION INLINE: os documentos abrem DENTRO do card (o drawer
+           fixo quebrava a tela e o fechar não funcionava) — lazy: só baixa
+           a lista no 1º clique; clicar de novo fecha. #}
+        <div class="docs-slot" id="docs-{{ c.nome }}" hidden></div>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% else %}
+  <p class="mut">nenhuma coleção ainda.</p>
+  {% endfor %}
+</section>
+
+<section class="cartao">
+  <h2 style="margin-top:0;">➕ Adicionar conhecimento</h2>
+  <p class="descricao">Uma entrada; todo caminho termina na <b>revisão</b> — você vê cada documento
+  (como veio × como vai entrar), duplicados, categorias e o score de aderência, e aplica só o aprovado.</p>
+
   <form hx-post="/hx/aquisicao" hx-target="#executando" hx-swap="afterbegin"
         hx-on::before-request="document.querySelectorAll('details[data-painel][open]').forEach(d => d.open = false); const ex = document.getElementById('executando'); ex && ex.scrollIntoView({behavior:'smooth', block:'start'})"
         hx-encoding="multipart/form-data">
@@ -147,6 +238,60 @@
   </script>
 </section>
 
+<details class="cartao detalhe-cab" data-painel="sim" id="manutencao-cartao">
+  <summary class="link-suave">🧰 manutenção e segurança da base</summary>
+  <p class="mini" style="margin:.5rem 0 .3rem;">
+    Operações de manutenção da base: <b>analisar</b> re-faz o catálogo (área/categoria/descrição
+    de cada coleção), <b>agrupar</b> organiza por objetivo, <b>dividir</b> destrincha uma
+    coleção em várias por tema (reaproveita os vetores). Rodam como JOB — log ao vivo no topo.
+  </p>
+  <div class="linha" style="align-items:end; gap:.6rem; flex-wrap:wrap;">
+    <div style="flex:1; min-width:10rem;">
+      <label class="mini">coleção-alvo (vazio = todas; obrigatória p/ dividir)</label>
+      <input type="text" id="man-cad-colecao" placeholder="ex.: python"
+             style="width:100%; padding:.3rem .5rem;">
+    </div>
+    <button type="button" onclick="manutencaoDisparar('analisar')"
+            title="re-faz o catálogo com a LLM (job)">🧠 analisar</button>
+    <button type="button" onclick="manutencaoDisparar('agrupar')"
+            title="agrupa as coleções por objetivo (job)">🗂 agrupar</button>
+    <button type="button" onclick="manutencaoDisparar('dividir')"
+            title="destrincha a coleção-alvo em várias por tema (job)">✂️ dividir</button>
+  </div>
+
+  <hr style="border:none; border-top:1px solid var(--borda); margin:.9rem 0 .7rem;">
+
+  <p class="mini" style="margin:.2rem 0 .3rem;">
+    <b>🔬 seed profundo</b> — coleta na web (definição → rodadas de busca → curadoria com
+    scores → download + repos oficiais → ingestão em lote) e cria uma coleção nova sobre
+    qualquer assunto. Termina no modo Revisão.
+  </p>
+  <div class="linha" style="align-items:end; gap:.6rem; flex-wrap:wrap;">
+    <div style="flex:1; min-width:10rem;">
+      <label class="mini">assunto (qualquer tema)</label>
+      <input type="text" id="seed-assunto" placeholder="ex.: psicanálise, kubernetes, vinificação"
+             style="width:100%; padding:.3rem .5rem;">
+    </div>
+    <div style="width:7rem;">
+      <label class="mini">fontes (máx)</label>
+      <input type="number" id="seed-fontes" value="8" min="3" max="20"
+             style="width:100%; padding:.3rem .5rem;">
+    </div>
+    <button type="button" class="primario" onclick="seedDisparar(this)"
+            title="coleta web profunda e monta a coleção (job com log ao vivo)">🔬 semear</button>
+  </div>
+
+  <hr style="border:none; border-top:1px solid var(--borda); margin:.9rem 0 .7rem;">
+
+  <div class="linha" style="align-items:center; gap:.6rem;">
+    <b style="flex:0 0 auto;">📸 snapshots</b>
+    <span class="mini" id="snap-info">carregando…</span>
+    <button type="button" onclick="carregarSnapshots()" style="margin-left:auto;"
+            title="recarrega a lista de fotografiações do disco">↻ atualizar</button>
+  </div>
+  <div id="snap-lista" class="mini" style="margin-top:.3rem;">carregando…</div>
+</details>
+
 <details class="cartao detalhe-cab" data-painel="sim">
   <summary class="link-suave">&#128218; ensinar o assistente — registrar problema &#8594; solu&#231;&#227;o</summary>
   <p class="mini" style="margin:.5rem 0 .2rem;">
@@ -170,7 +315,7 @@
   </form>
 </details>
 
-<details class="cartao detalhe-cab" data-painel="sim" id="mcp-cartao" data-painel="sim">
+<details class="cartao detalhe-cab" data-painel="sim" id="mcp-cartao">
   <summary class="link-suave">🔌 servidores MCP — ferramentas para o chat</summary>
   <p class="mini" style="margin:.5rem 0 .2rem;">
     MCP = ferramentas externas que o assistente do chat pode USAR ao responder
@@ -255,376 +400,255 @@
   });
 </script>
 
-<div id="executando">
-  {# ═══ JOBS ATIVOS: re-injetados ao voltar à página (a pesquisa não some) #}
-  {% for j in jobs_ativos %}
-  <div id="job-{{ j.job }}" class="cartao" style="padding:.8rem;"
-       hx-get="/hx/job/{{ j.kind }}/{{ j.job }}" hx-trigger="every 1500ms" hx-swap="outerHTML">
-    <div class="resumo-job"><span class="ponto" style="display:inline-block;"></span>
-      {{ j.rotulo }} — em andamento…</div>
-  </div>
-  {% endfor %}
-</div>
-
-<section class="cartao">
-  <div class="linha" style="align-items:center; margin-bottom:.6rem;">
-    <h2 style="margin:0; flex:0 0 auto;">Coleções</h2>
-    <div style="flex:1; min-width:min(100%,12rem); max-width:20rem;">
-      <input type="text" id="filtro-colecao" placeholder="🔎 filtrar por nome/categoria…" style="padding:.35rem .55rem; font-size:.85rem;">
-    </div>
-    <div class="estreito" style="flex:0 0 auto;">
-      <button hx-post="/hx/recategorizar" hx-target="#executando" hx-swap="afterbegin"
-              title="a LLM re-analisa TODA a biblioteca: área, categoria e descrição de cada coleção">
-        🧠 recategorizar com IA</button>
-    </div>
-  </div>
-
-  {# ═══ MANUTENÇÃO / SEED / SNAPSHOTS — poder operacional do dono (etapa 2) #}
-  <details class="cartao detalhe-cab" data-painel="sim" id="manutencao-cartao">
-    <summary class="link-suave">🧰 manutenção e segurança da base</summary>
-    <p class="mini" style="margin:.5rem 0 .3rem;">
-      Operações de manutenção da base: <b>analisar</b> re-faz o catálogo (área/categoria/descrição
-      de cada coleção), <b>agrupar</b> organiza por objetivo, <b>dividir</b> destrincha uma
-      coleção em várias por tema (reaproveita os vetores). Rodam como JOB — log ao vivo no topo.
-    </p>
-    <div class="linha" style="align-items:end; gap:.6rem; flex-wrap:wrap;">
-      <div style="flex:1; min-width:10rem;">
-        <label class="mini">coleção-alvo (vazio = todas; obrigatória p/ dividir)</label>
-        <input type="text" id="man-cad-colecao" placeholder="ex.: python"
-               style="width:100%; padding:.3rem .5rem;">
-      </div>
-      <button type="button" onclick="manutencaoDisparar('analisar')"
-              title="re-faz o catálogo com a LLM (job)">🧠 analisar</button>
-      <button type="button" onclick="manutencaoDisparar('agrupar')"
-              title="agrupa as coleções por objetivo (job)">🗂 agrupar</button>
-      <button type="button" onclick="manutencaoDisparar('dividir')"
-              title="destrincha a coleção-alvo em várias por tema (job)">✂️ dividir</button>
-    </div>
-
-    <hr style="border:none; border-top:1px solid var(--borda); margin:.9rem 0 .7rem;">
-
-    <p class="mini" style="margin:.2rem 0 .3rem;">
-      <b>🔬 seed profundo</b> — coleta na web (definição → rodadas de busca → curadoria com
-      scores → download + repos oficiais → ingestão em lote) e cria uma coleção nova sobre
-      qualquer assunto. Termina no modo Revisão.
-    </p>
-    <div class="linha" style="align-items:end; gap:.6rem; flex-wrap:wrap;">
-      <div style="flex:1; min-width:10rem;">
-        <label class="mini">assunto (qualquer tema)</label>
-        <input type="text" id="seed-assunto" placeholder="ex.: psicanálise, kubernetes, vinificação"
-               style="width:100%; padding:.3rem .5rem;">
-      </div>
-      <div style="width:7rem;">
-        <label class="mini">fontes (máx)</label>
-        <input type="number" id="seed-fontes" value="8" min="3" max="20"
-               style="width:100%; padding:.3rem .5rem;">
-      </div>
-      <button type="button" class="primario" onclick="seedDisparar(this)"
-              title="coleta web profunda e monta a coleção (job com log ao vivo)">🔬 semear</button>
-    </div>
-
-    <hr style="border:none; border-top:1px solid var(--borda); margin:.9rem 0 .7rem;">
-
-    <div class="linha" style="align-items:center; gap:.6rem;">
-      <b style="flex:0 0 auto;">📸 snapshots</b>
-      <span class="mini" id="snap-info">carregando…</span>
-      <button type="button" onclick="carregarSnapshots()" style="margin-left:auto;"
-              title="recarrega a lista de fotografiações do disco">↻ atualizar</button>
-    </div>
-    <div id="snap-lista" class="mini" style="margin-top:.3rem;">carregando…</div>
-  </details>
-  <div class="colecoes-cards">
-      {% for c in colecoes %}
-      <div class="colecao-card linha-colecao" data-busca="{{ c.nome }} {{ c.categoria or '' }} {{ c.descricao or '' }}">
-        <div class="cc-topo">
-          <b class="cc-nome">{{ c.nome }}</b>
-          <span class="cc-pts">{{ c.points }} pts</span>
-        </div>
-        <p class="cc-cat">{{ c.categoria or "—" }}</p>
-        <p class="cc-desc">{{ (c.descricao or "")[:140] }}</p>
-        <div class="cc-acoes">
-          <button onclick="alternarDocs(this, '{{ c.nome | e }}')"
-                  data-aberto="0"
-                  title="documentos da coleção (nomes, pedaços, prévia)">📄 documentos</button>
-          <button hx-post="/hx/enriquecer/{{ c.nome }}" hx-target="#executando" hx-swap="afterbegin"
-                  title="a LLM re-lê amostras e regenera área/categoria/descrição">✨ enriquecer</button>
-          <button type="button" onclick="snapshotColecao('{{ c.nome | e }}', this)"
-                  title="fotografa id+vetor+payload da coleção agora (restaurável no cartão de snapshots)">📸 snapshot</button>
-          <button type="button" onclick="higienizarColecao('{{ c.nome | e }}', this)"
-                  title="limpeza determinística: frases reconstituídas, ruído e duplicados fora, re-embed no mesmo id">🧹 higienizar</button>
-          <button class="perigo" hx-post="/hx/colecao/{{ c.nome }}/apagar"
-                  hx-target="#executando" hx-swap="afterbegin"
-                  hx-confirm="apagar {{ c.nome }} inteira? (sem volta)">🗑 apagar</button>
-        </div>
-        {# ACCORDION INLINE: os documentos abrem DENTRO do card (o drawer
-           fixo quebrava a tela e o fechar não funcionava) — lazy: só baixa
-           a lista no 1º clique; clicar de novo fecha. #}
-        <div class="docs-slot" id="docs-{{ c.nome }}" hidden></div>
-      </div>
-      {% else %}
-      <p class="mut">nenhuma coleção ainda.</p>
-      {% endfor %}
-    </div>
-
-  <script>
-    // ACCORDION lazy: 1º clique baixa a lista (fetch), 2º fecha. O slot
-    // vive DENTRO do card — nada de overlay cobrindo a página.
-    async function alternarDocs(btn, nome) {
-      const slot = document.getElementById("docs-" + nome);
-      if (btn.dataset.aberto === "1") {
-        slot.hidden = true; btn.dataset.aberto = "0";
-        btn.textContent = "📄 documentos";
-        return;
-      }
-      btn.dataset.aberto = "1";
-      btn.textContent = "📄 fechar documentos";
-      if (!slot.dataset.carregado) {
-        slot.innerHTML = '<p class="mini" style="padding:.3rem 0">carregando documentos…</p>';
-        try {
-          const r = await fetch("/hx/colecao/" + encodeURIComponent(nome) + "/docs");
-          slot.innerHTML = await r.text();
-          slot.dataset.carregado = "1";
-        } catch (e) {
-          slot.innerHTML = '<p class="erro-texto">falha: ' + e.message + "</p>";
-        }
-      }
-      slot.hidden = false;
+<script>
+  // ACCORDION lazy: 1º clique baixa a lista (fetch), 2º fecha. O slot
+  // vive DENTRO do card — nada de overlay cobrindo a página.
+  async function alternarDocs(btn, nome) {
+    const slot = document.getElementById("docs-" + nome);
+    if (btn.dataset.aberto === "1") {
+      slot.hidden = true; btn.dataset.aberto = "0";
+      btn.textContent = "📄 documentos";
+      return;
     }
-    // MODAL de detalhes (a lista corta o conteúdo em 160 chars): o modal
-    // nativo <dialog> LARGO (padrão global) traz o documento por inteiro,
-    // tipografia de leitura + ESC/backdrop fecham.
-    async function abrirDocModal(nome, chave) {
-      const dlg = document.getElementById("doc-modal");
-      const corpo = document.getElementById("doc-modal-corpo");
-      const cab = dlg.querySelector(".modal-cab b");
-      corpo.innerHTML = '<p class="mini">carregando documento…</p>';
-      dlg.showModal();
+    btn.dataset.aberto = "1";
+    btn.textContent = "📄 fechar documentos";
+    if (!slot.dataset.carregado) {
+      slot.innerHTML = '<p class="mini" style="padding:.3rem 0">carregando documentos…</p>';
       try {
-        const r = await fetch("/hx/colecao/" + encodeURIComponent(nome)
-                              + "/doc?chave=" + encodeURIComponent(chave));
-        const html = await r.text();
-        // título do modal = 1º <b>/h do conteúdo; corpo vira bloco de leitura
-        const d = document.createElement("div");
-        d.innerHTML = html;
-        const b = d.querySelector("b, h1, h2, h3");
-        if (b && cab) { cab.textContent = b.textContent.slice(0, 90); b.remove(); }
-        else if (cab) { cab.textContent = "documento"; }
-        corpo.innerHTML = '<div class="doc-texto">'
-            + d.innerHTML.replace(/<\/?(div|p|pre)[^>]*>/gi, "\n")
-                .replace(/\n{3,}/g, "\n\n").trim()
-            + "</div>";
+        const r = await fetch("/hx/colecao/" + encodeURIComponent(nome) + "/docs");
+        slot.innerHTML = await r.text();
+        slot.dataset.carregado = "1";
       } catch (e) {
-        corpo.innerHTML = '<p class="erro-texto">falha: ' + e.message + "</p>";
+        slot.innerHTML = '<p class="erro-texto">falha: ' + e.message + "</p>";
       }
     }
-
-    // EDICAO do documento (pedido do dono 28/08): alterna leitura e
-    // textarea com o texto COMPLETO; salvar apaga os chunks e REINGERA
-    // pelo pipeline (snapshot automatico antes de apagar).
-    function toggleDocEdicao(on) {
-      const leitura = document.getElementById("doc-blocos");
-      const editar = document.getElementById("doc-editar");
-      if (!leitura || !editar) return;
-      leitura.hidden = !!on;
-      editar.hidden = !on;
-      if (on) {
-        const ta = document.getElementById("doc-editar-texto");
-        if (ta) { ta.style.height = Math.min(ta.scrollHeight + 24, 600) + "px"; ta.focus(); }
-      }
+    slot.hidden = false;
+  }
+  // MODAL de detalhes (a lista corta o conteúdo em 160 chars): o modal
+  // nativo <dialog> LARGO (padrão global) traz o documento por inteiro,
+  // tipografia de leitura + ESC/backdrop fecham.
+  async function abrirDocModal(nome, chave) {
+    const dlg = document.getElementById("doc-modal");
+    const corpo = document.getElementById("doc-modal-corpo");
+    const cab = dlg.querySelector(".modal-cab b");
+    corpo.innerHTML = '<p class="mini">carregando documento…</p>';
+    dlg.showModal();
+    try {
+      const r = await fetch("/hx/colecao/" + encodeURIComponent(nome)
+                            + "/doc?chave=" + encodeURIComponent(chave));
+      const html = await r.text();
+      // título do modal = 1º <b>/h do conteúdo; corpo vira bloco de leitura
+      const d = document.createElement("div");
+      d.innerHTML = html;
+      const b = d.querySelector("b, h1, h2, h3");
+      if (b && cab) { cab.textContent = b.textContent.slice(0, 90); b.remove(); }
+      else if (cab) { cab.textContent = "documento"; }
+      corpo.innerHTML = '<div class="doc-texto">'
+          + d.innerHTML.replace(/<\/?(div|p|pre)[^>]*>/gi, "\n")
+              .replace(/\n{3,}/g, "\n\n").trim()
+          + "</div>";
+    } catch (e) {
+      corpo.innerHTML = '<p class="erro-texto">falha: ' + e.message + "</p>";
     }
+  }
 
-    async function salvarDocEdicao(nome, chave) {
+  // EDICAO do documento (pedido do dono 28/08): alterna leitura e
+  // textarea com o texto COMPLETO; salvar apaga os chunks e REINGERA
+  // pelo pipeline (snapshot automatico antes de apagar).
+  function toggleDocEdicao(on) {
+    const leitura = document.getElementById("doc-blocos");
+    const editar = document.getElementById("doc-editar");
+    if (!leitura || !editar) return;
+    leitura.hidden = !!on;
+    editar.hidden = !on;
+    if (on) {
       const ta = document.getElementById("doc-editar-texto");
-      const st = document.getElementById("doc-editar-status");
-      const btn = document.getElementById("doc-editar-salvar");
-      if (!ta || !ta.value.trim()) { if (st) st.textContent = "texto vazio"; return; }
-      if (!confirm("Salvar substitui TODOS os chunks deste documento pelo texto editado (snapshot de seguranca e gravado antes). Continuar?")) return;
-      if (btn) btn.disabled = true;
-      if (st) st.textContent = "salvando e reingestando...";
-      try {
-        const fd = new URLSearchParams();
-        fd.set("chave", chave);
-        fd.set("texto", ta.value);
-        const r = await fetch("/hx/colecao/" + encodeURIComponent(nome) + "/editar", {
-          method: "POST", body: fd });
-        const txt = await r.text();
-        if (st) {
-          st.innerHTML = txt;
-          if (!r.ok) st.classList.add("erro-texto");
-        }
-      } catch (e) {
-        if (st) st.textContent = "falha: " + e.message;
-      } finally {
-        if (btn) btn.disabled = false;
+      if (ta) { ta.style.height = Math.min(ta.scrollHeight + 24, 600) + "px"; ta.focus(); }
+    }
+  }
+
+  async function salvarDocEdicao(nome, chave) {
+    const ta = document.getElementById("doc-editar-texto");
+    const st = document.getElementById("doc-editar-status");
+    const btn = document.getElementById("doc-editar-salvar");
+    if (!ta || !ta.value.trim()) { if (st) st.textContent = "texto vazio"; return; }
+    if (!confirm("Salvar substitui TODOS os chunks deste documento pelo texto editado (snapshot de seguranca e gravado antes). Continuar?")) return;
+    if (btn) btn.disabled = true;
+    if (st) st.textContent = "salvando e reingestando...";
+    try {
+      const fd = new URLSearchParams();
+      fd.set("chave", chave);
+      fd.set("texto", ta.value);
+      const r = await fetch("/hx/colecao/" + encodeURIComponent(nome) + "/editar", {
+        method: "POST", body: fd });
+      const txt = await r.text();
+      if (st) {
+        st.innerHTML = txt;
+        if (!r.ok) st.classList.add("erro-texto");
       }
+    } catch (e) {
+      if (st) st.textContent = "falha: " + e.message;
+    } finally {
+      if (btn) btn.disabled = false;
     }
-  </script>
+  }
+</script>
 
-  {# MODAL de documento — GRANDE (leitura), padrão global: dialog nativo
-     (ESC fecha no base.html) + .modal-caixa.larga (78rem) #}
-  <dialog id="doc-modal" class="modal-caixa larga" style="border:none; padding:0;">
-    <div class="modal-cab">
-      <b>documento</b>
-      <span style="display:flex; gap:.5rem;">
-        <button type="button" class="acao-btn" onclick="toggleDocEdicao(true)"
-                title="editar o texto completo deste documento (salvar reingera)">✎ editar</button>
-        <button type="button" class="acao-btn" data-fechar
-                onclick="document.getElementById('doc-modal').close()"
-                title="fechar (Esc)">✕ fechar</button>
-      </span>
-    </div>
-    <div class="modal-corpo" id="doc-modal-corpo"></div>
-  </dialog>
-  <script>
-    // filtro ao vivo: digita → esconde as linhas que não casam
-    const f = document.getElementById("filtro-colecao");
-    f.addEventListener("input", () => {
-      const q = f.value.trim().toLowerCase();
-      document.querySelectorAll(".linha-colecao").forEach(tr => {
-        tr.style.display = tr.dataset.busca.toLowerCase().includes(q) ? "" : "none";
+{# MODAL de documento — GRANDE (leitura), padrão global: dialog nativo
+   (ESC fecha no base.html) + .modal-caixa.larga (78rem) #}
+<dialog id="doc-modal" class="modal-caixa larga" style="border:none; padding:0;">
+  <div class="modal-cab">
+    <b>documento</b>
+    <span style="display:flex; gap:.5rem;">
+      <button type="button" class="acao-btn" onclick="toggleDocEdicao(true)"
+              title="editar o texto completo deste documento (salvar reingera)">✎ editar</button>
+      <button type="button" class="acao-btn" data-fechar
+              onclick="document.getElementById('doc-modal').close()"
+              title="fechar (Esc)">✕ fechar</button>
+    </span>
+  </div>
+  <div class="modal-corpo" id="doc-modal-corpo"></div>
+</dialog>
+<script>
+  // filtro ao vivo: digita → esconde os CARDS que não casam e os GRUPOS
+  // que ficaram vazios (a reestruturação agrupou por categoria)
+  const f = document.getElementById("filtro-colecao");
+  f.addEventListener("input", () => {
+    const q = f.value.trim().toLowerCase();
+    document.querySelectorAll(".bib-grupo").forEach(g => {
+      let visiveis = 0;
+      g.querySelectorAll(".linha-colecao").forEach(tr => {
+        const casa = tr.dataset.busca.toLowerCase().includes(q);
+        tr.style.display = casa ? "" : "none";
+        if (casa) visiveis++;
       });
+      g.style.display = visiveis ? "" : "none";
+      g.open = visiveis > 0;
     });
+  });
 
-    // ═══ ETAPA 2: manutenção/seed/snapshots/higienizar (poder operacional) ═══
-    function _jobCard(kind, job, rotulo) {
-      // injeta card de JOB no topo (mesmo contrato do #executando htmx)
-      const zona = document.getElementById("executando");
-      const div = document.createElement("div");
-      div.id = "job-" + job;
-      div.className = "cartao";
-      div.style.padding = ".8rem";
-      div.setAttribute("hx-get", "/hx/job/" + kind + "/" + job);
-      div.setAttribute("hx-trigger", "every 1500ms");
-      div.setAttribute("hx-swap", "outerHTML");
-      div.innerHTML = '<div class="resumo-job"><span class="ponto" style="display:inline-block;"></span>'
-        + rotulo + " — em andamento…</div>";
-      zona.prepend(div);
-      htmx.process(div);
-    }
+  // ═══ manutenção/seed/snapshots/higienizar (poder operacional) ═══
+  function _jobCard(kind, job, rotulo) {
+    // injeta card de JOB no topo (mesmo contrato do #executando htmx)
+    const zona = document.getElementById("executando");
+    const div = document.createElement("div");
+    div.id = "job-" + job;
+    div.className = "cartao";
+    div.style.padding = ".8rem";
+    div.setAttribute("hx-get", "/hx/job/" + kind + "/" + job);
+    div.setAttribute("hx-trigger", "every 1500ms");
+    div.setAttribute("hx-swap", "outerHTML");
+    div.innerHTML = '<div class="resumo-job"><span class="ponto" style="display:inline-block;"></span>'
+      + rotulo + " — em andamento…</div>";
+    zona.prepend(div);
+    htmx.process(div);
+  }
 
-    async function snapshotColecao(nome, btn) {
-      if (!confirm("📸 fotografar '" + nome + "' agora? (id+vetor+payload em logs/snapshots — restaurável)")) return;
-      btn.disabled = true; btn.textContent = "📸…";
-      try {
-        const r = await fetch("/api/snapshot/" + encodeURIComponent(nome)
-                              + "?motivo=" + encodeURIComponent("manual (biblioteca)"));
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.detail || r.status);
-        toast("📸 snapshot de '" + nome + "' criado (" + (j.snapshots ?? "?") + " no disco)");
-        carregarSnapshots();
-      } catch (e) { toast("falha no snapshot: " + e.message); }
-      btn.disabled = false; btn.textContent = "📸 snapshot";
-    }
+  async function snapshotColecao(nome, btn) {
+    if (!confirm("📸 fotografar '" + nome + "' agora? (id+vetor+payload em logs/snapshots — restaurável)")) return;
+    btn.disabled = true; btn.textContent = "📸…";
+    try {
+      const r = await fetch("/api/snapshot/" + encodeURIComponent(nome)
+                            + "?motivo=" + encodeURIComponent("manual (biblioteca)"));
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || r.status);
+      toast("📸 snapshot de '" + nome + "' criado (" + (j.snapshots ?? "?") + " no disco)");
+      carregarSnapshots();
+    } catch (e) { toast("falha no snapshot: " + e.message); }
+    btn.disabled = false; btn.textContent = "📸 snapshot";
+  }
 
-    async function higienizarColecao(nome, btn) {
-      if (!confirm("🧹 higienizar '" + nome + "'? (frases reconstituídas, ruído e duplicados fora, re-embed no mesmo id — job em 2º plano)")) return;
-      btn.disabled = true; btn.textContent = "🧹…";
-      try {
-        const r = await fetch("/api/higienizar", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({collection: nome})});
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.detail || r.status);
-        _jobCard("higienizar", j.job, "🧹 higienização · " + nome);
-        toast("🧹 higienização de '" + nome + "' iniciada");
-      } catch (e) { toast("falha: " + e.message); }
-      btn.disabled = false; btn.textContent = "🧹 higienizar";
-    }
-
-    async function manutencaoDisparar(acao) {
-      const colecao = (document.getElementById("man-cad-colecao").value || "").trim();
-      if (acao === "dividir" && !colecao) { toast("informe a coleção-alvo para dividir"); return; }
-      const rot = {analisar: "🧠 análise do catálogo", agrupar: "🗂 agrupamento por objetivo",
-                   dividir: "✂️ dividir '" + colecao + "'"}[acao];
-      if (!confirm(rot + " — disparar? (job com log ao vivo)")) return;
-      try {
-        const r = await fetch("/api/manutencao", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({acao: acao, colecao: colecao || null, apagar_original: false})});
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.detail || r.status);
-        _jobCard("manutencao", j.job, rot);
-        toast(rot + " iniciado");
-      } catch (e) { toast("falha: " + e.message); }
-    }
-
-    async function seedDisparar(btn) {
-      const assunto = (document.getElementById("seed-assunto").value || "").trim();
-      if (!assunto) { toast("informe o assunto do seed"); return; }
-      const fontes = parseInt(document.getElementById("seed-fontes").value || "8", 10);
-      if (!confirm("🔬 semear coleção sobre '" + assunto + "' (até " + fontes + " fontes, curadoria com scores, termina na Revisão)?")) return;
-      btn.disabled = true; btn.textContent = "🔬…";
-      try {
-        const r = await fetch("/api/seed", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({assunto: assunto, fontes: fontes})});
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.detail || r.status);
-        _jobCard("seed", j.job, "🔬 seed · " + assunto);
-        toast("🔬 seed de '" + assunto + "' iniciado");
-      } catch (e) { toast("falha: " + e.message); btn.disabled = false; btn.textContent = "🔬 semear"; return; }
-      btn.disabled = false; btn.textContent = "🔬 semear";
-    }
-
-    async function carregarSnapshots() {
-      const zona = document.getElementById("snap-lista");
-      const info = document.getElementById("snap-info");
-      if (!zona) return;
-      try {
-        const snaps = await (await fetch("/api/snapshot")).json();
-        if (!snaps.length) { zona.textContent = "nenhum snapshot no disco ainda."; info.textContent = ""; return; }
-        info.textContent = snaps.length + " no disco";
-        zona.innerHTML = snaps.slice(0, 30).map(s => {
-          const arq = String(s.arquivo || "").replace(/</g, "&lt;");
-          return "<div class='linha' style='align-items:center; gap:.5rem; padding:.15rem 0;'>"
-            + "<span style='flex:1; min-width:8rem;'><b>" + String(s.colecao).replace(/</g, "&lt;")
-            + "</b> · " + (s.pontos ?? "?") + " pts · " + (s.mb ?? "?") + " MB</span>"
-            + "<span class='mini' style='flex:1;'>" + String(s.motivo || "").replace(/</g, "&lt;")
-            + " · " + String(s.criado || "").replace(/</g, "&lt;").slice(0, 16).replace("T", " ") + "</span>"
-            + "<button type='button' class='acao-btn' data-snaprestaura='" + arq
-            + "' data-colecao='" + String(s.colecao).replace(/</g, "&lt;")
-            + "' title='recria a coleção a partir desta fotografia (APAGA a atual antes)'>↩ restaurar</button>"
-            + "</div>";
-        }).join("");
-      } catch (e) { zona.textContent = "falha ao listar: " + e.message; }
-    }
-    // delegate: restaurar snapshot (data-attrs — padrão do projeto)
-    document.addEventListener("click", (ev) => {
-      const b = ev.target.closest("[data-snaprestaura]");
-      if (!b) return;
-      const arq = b.dataset.snaprestaura, col = b.dataset.colecao;
-      if (!confirm("↩ restaurar '" + col + "' deste snapshot? A coleção ATUAL é APAGADA antes de recriar do arquivo. Continuar?")) return;
-      b.disabled = true; b.textContent = "↩…";
-      fetch("/api/snapshot/restaurar", {
+  async function higienizarColecao(nome, btn) {
+    if (!confirm("🧹 higienizar '" + nome + "'? (frases reconstituídas, ruído e duplicados fora, re-embed no mesmo id — job em 2º plano)")) return;
+    btn.disabled = true; btn.textContent = "🧹…";
+    try {
+      const r = await fetch("/api/higienizar", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({arquivo: arq, colecao: col})
-      }).then(r => r.json().then(j => ({ok: r.ok, j})))
-        .then(({ok, j}) => {
-          if (!ok) throw new Error(j.detail || "falha");
-          toast("↩ '" + col + "' restaurado (" + JSON.stringify(j).slice(0, 80) + ")");
-          setTimeout(() => location.reload(), 900);
-        })
-        .catch(e => { toast("falha ao restaurar: " + e.message); b.disabled = false; b.textContent = "↩ restaurar"; });
-    });
-    carregarSnapshots();
-  </script>
-</section>
+        body: JSON.stringify({collection: nome})});
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || r.status);
+      _jobCard("higienizar", j.job, "🧹 higienização · " + nome);
+      toast("🧹 higienização de '" + nome + "' iniciada");
+    } catch (e) { toast("falha: " + e.message); }
+    btn.disabled = false; btn.textContent = "🧹 higienizar";
+  }
+
+  async function manutencaoDisparar(acao) {
+    const colecao = (document.getElementById("man-cad-colecao").value || "").trim();
+    if (acao === "dividir" && !colecao) { toast("informe a coleção-alvo para dividir"); return; }
+    const rot = {analisar: "🧠 análise do catálogo", agrupar: "🗂 agrupamento por objetivo",
+                 dividir: "✂️ dividir '" + colecao + "'"}[acao];
+    if (!confirm(rot + " — disparar? (job com log ao vivo)")) return;
+    try {
+      const r = await fetch("/api/manutencao", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({acao: acao, colecao: colecao || null, apagar_original: false})});
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || r.status);
+      _jobCard("manutencao", j.job, rot);
+      toast(rot + " iniciado");
+    } catch (e) { toast("falha: " + e.message); }
+  }
+
+  async function seedDisparar(btn) {
+    const assunto = (document.getElementById("seed-assunto").value || "").trim();
+    if (!assunto) { toast("informe o assunto do seed"); return; }
+    const fontes = parseInt(document.getElementById("seed-fontes").value || "8", 10);
+    if (!confirm("🔬 semear coleção sobre '" + assunto + "' (até " + fontes + " fontes, curadoria com scores, termina na Revisão)?")) return;
+    btn.disabled = true; btn.textContent = "🔬…";
+    try {
+      const r = await fetch("/api/seed", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({assunto: assunto, fontes: fontes})});
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || r.status);
+      _jobCard("seed", j.job, "🔬 seed · " + assunto);
+      toast("🔬 seed de '" + assunto + "' iniciado");
+    } catch (e) { toast("falha: " + e.message); btn.disabled = false; btn.textContent = "🔬 semear"; return; }
+    btn.disabled = false; btn.textContent = "🔬 semear";
+  }
+
+  async function carregarSnapshots() {
+    const zona = document.getElementById("snap-lista");
+    const info = document.getElementById("snap-info");
+    if (!zona) return;
+    try {
+      const snaps = await (await fetch("/api/snapshot")).json();
+      if (!snaps.length) { zona.textContent = "nenhum snapshot no disco ainda."; info.textContent = ""; return; }
+      info.textContent = snaps.length + " no disco";
+      zona.innerHTML = snaps.slice(0, 30).map(s => {
+        const arq = String(s.arquivo || "").replace(/</g, "&lt;");
+        return "<div class='linha' style='align-items:center; gap:.5rem; padding:.15rem 0;'>"
+          + "<span style='flex:1; min-width:8rem;'><b>" + String(s.colecao).replace(/</g, "&lt;")
+          + "</b> · " + (s.pontos ?? "?") + " pts · " + (s.mb ?? "?") + " MB</span>"
+          + "<span class='mini' style='flex:1;'>" + String(s.motivo || "").replace(/</g, "&lt;")
+          + " · " + String(s.criado || "").replace(/</g, "&lt;").slice(0, 16).replace("T", " ") + "</span>"
+          + "<button type='button' class='acao-btn' data-snaprestaura='" + arq
+          + "' data-colecao='" + String(s.colecao).replace(/</g, "&lt;")
+          + "' title='recria a coleção a partir desta fotografia (APAGA a atual antes)'>↩ restaurar</button>"
+          + "</div>";
+      }).join("");
+    } catch (e) { zona.textContent = "falha ao listar: " + e.message; }
+  }
+  // delegate: restaurar snapshot (data-attrs — padrão do projeto)
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-snaprestaura]");
+    if (!b) return;
+    const arq = b.dataset.snaprestaura, col = b.dataset.colecao;
+    if (!confirm("↩ restaurar '" + col + "' deste snapshot? A coleção ATUAL é APAGADA antes de recriar do arquivo. Continuar?")) return;
+    b.disabled = true; b.textContent = "↩…";
+    fetch("/api/snapshot/restaurar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({arquivo: arq, colecao: col})
+    }).then(r => r.json().then(j => ({ok: r.ok, j})))
+      .then(({ok, j}) => {
+        if (!ok) throw new Error(j.detail || "falha");
+        toast("↩ '" + col + "' restaurado (" + JSON.stringify(j).slice(0, 80) + ")");
+        setTimeout(() => location.reload(), 900);
+      })
+      .catch(e => { toast("falha ao restaurar: " + e.message); b.disabled = false; b.textContent = "↩ restaurar"; });
+  });
+  carregarSnapshots();
+</script>
 </div>
 {% endblock %}
-
-/* EDICAO de documento (Biblioteca): textarea com o texto completo */
-.doc-editar-texto {
-  width: 100%;
-  min-height: 18rem;
-  max-height: 37rem;
-  overflow-y: auto;
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: .82rem;
-  line-height: 1.5;
-  padding: .8rem;
-  border-radius: .6rem;
-  border: 1px solid var(--borda, #8884);
-  background: var(--fundo-alto, transparent);
-  color: inherit;
-  white-space: pre-wrap;
-}
