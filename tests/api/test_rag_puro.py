@@ -131,6 +131,68 @@ def test_rag_puro_sem_sinal_avisa_em_vez_de_responder_outro_assunto(
     assert "vatapá" in r["answer"]        # …material segue como referência
 
 
+def test_rag_puro_digest_inclui_paginas_da_web(cenario, monkeypatch):
+    """Bug real do dono 12/09 ("não está considerando a pesquisa que fiz na
+    web"): as páginas baixadas eram anexadas DEPOIS dos fragmentos da base e
+    o digest (limite 4) as descartava — segundos de download invisíveis.
+    Agora o rerank pontua base+web JUNTOS e o digest segue a ordem dele."""
+    base, rag = cenario
+
+    def _rerank(pergunta, achados, top_n=4, log=None, **kw):
+        # a página da web (anexada por ÚLTIMO) é a mais relevante
+        return list(reversed(achados))[:top_n], 0.9
+    monkeypatch.setattr(base.rerank, "rerank", _rerank)
+    web = [_doc("Receita de arroz com jambu e tucupi passo a passo.")]
+    monkeypatch.setattr(base, "_web_aprofundado", lambda *a, **kw: web)
+    r = _processar_query(QueryIn(question="E arroz com tucupi?", mode="rag",
+                                 collections=["c"], mcps=[base.MCP_WEB]))
+    assert "arroz com jambu" in r["answer"]            # a página aparece…
+    assert r["answer"].index("arroz com jambu") < r["answer"].index("vatapá")
+    assert not r["answer"].startswith("⚠️")             # web trouxe sinal
+
+
+def test_digest_traduz_trecho_e_titulo_de_fragmento_em_ingles(monkeypatch):
+    """Pedido do dono 12/09 ("o retorno tem partes em português e outras em
+    inglês"): pergunta PT + trecho EN → sai em PT via opus-mt, marcado;
+    título com slug de URL é decodificado E traduzido. O original não vaza."""
+    from core import rag, tradutor
+
+    def _fake_lote(textos, **kw):
+        assert "traditional dish" in textos[0]          # trecho primeiro…
+        assert "Cuisine of Pará" in textos[1]           # …título depois
+        return ["O vatapá é um prato tradicional do Pará, com dendê.",
+                "Cozinha do Pará"]
+    monkeypatch.setattr(tradutor, "traduzir_lote", _fake_lote)
+    docs = [Document(
+        page_content="Vatapá is a traditional dish from the state of Pará, "
+                     "made with dendê palm oil, bread and dried shrimp, "
+                     "served with white rice.",
+        metadata={"colecao": "culinaria", "titulo": "Cuisine_of_Par%C3%A1"})]
+    out = rag.digest_rag("o que é o vatapá?", docs)
+    assert "prato tradicional do Pará" in out
+    assert "Cozinha do Pará" in out
+    assert "*(traduzido)*" in out
+    assert "Vatapá is" not in out
+
+
+def test_digest_nao_traduz_titulo_portugues_sem_evidencia_de_ingles(
+        monkeypatch):
+    """'Tucupi — síntese' não tem palavra funcional nenhuma — a contagem
+    PT×EN empata e traduzir seria PIOR que deixar como está (só título com
+    evidência real de inglês entra no lote)."""
+    from core import rag, tradutor
+    chamadas = []
+    monkeypatch.setattr(tradutor, "traduzir_lote",
+                        lambda ts, **kw: chamadas.extend(ts) or ["x"] * len(ts))
+    docs = [Document(page_content="O tucupi é um caldo amarelo extraído da "
+                                  "mandioca brava, típico do Pará.",
+                     metadata={"colecao": "c", "titulo": "Tucupi — síntese"})]
+    out = rag.digest_rag("o que é tucupi?", docs)
+    assert "caldo amarelo" in out
+    assert "*(traduzido)*" not in out
+    assert chamadas == []                     # nada foi enviado ao modelo
+
+
 def test_digest_rag_sanitiza_recorta_e_numera():
     """Pedido do dono 12/09: '<sup> aparecendo', fragmento-monstro inteiro e
     resposta de outra pergunta — o digest limpa detritos de citação, cabeça

@@ -535,12 +535,19 @@ def _digest_termos(texto: str) -> set[str]:
 
 
 def _eh_portugues(texto: str) -> bool:
-    """Heurística leve (sem LLM): palavras funcionais PT × EN na amostra."""
+    """Heurística leve (sem LLM): palavras funcionais PT × EN na amostra.
+    Lista ampla de propósito — frase curta PT sem NENHUM marcador empatava
+    0×0 e o trecho seguia para o tradutor ('O tucupi é um caldo amarelo…'
+    não tinha 'um'/'é'/'da' na lista antiga)."""
     t = (texto or "").lower()[:2000]
-    pt = len(re.findall(r"\b(?:que|não|nao|uma|com|para|dos|das|mais|como|"
-                        r"está|são|sao|pelo|pela|seu|sua|então|entao)\b", t))
+    pt = len(re.findall(r"\b(?:que|não|nao|um|uma|uns|umas|é|com|para|de|do|"
+                        r"da|dos|das|no|na|em|por|mais|como|está|são|sao|"
+                        r"foi|era|tem|há|sem|entre|sobre|muito|quando|porque|"
+                        r"onde|estar|também|tambem|já|ja|ainda|assim|aqui|"
+                        r"pelo|pela|seu|sua|então|entao)\b", t))
     en = len(re.findall(r"\b(?:the|and|with|from|this|that|which|also|"
-                        r"known|made|after|being|there)\b", t))
+                        r"known|made|after|being|there|into|than|then|"
+                        r"these|those|its|their|has|have|was|were)\b", t))
     return pt > en
 
 
@@ -577,6 +584,23 @@ def _digest_trecho(txt: str, termos: set[str], pergunta_pt: bool,
     return ("…" if ini > 0 else "") + out + ("…" if fim < len(parags) else "")
 
 
+def _eh_ingles(texto: str) -> bool:
+    """Evidência REAL de inglês — usado em TÍTULOS curtos, onde a contagem
+    PT×EN empata (0×0) e traduzir 'Tucupi — síntese' (já em PT) seria pior
+    que deixar como está."""
+    t = (texto or "").lower()[:300]
+    en = len(re.findall(r"\b(?:the|of|and|with|from|this|that|also|known|"
+                        r"made|being|cuisine|dish)\b", t))
+    return en > 0 and not _eh_portugues(texto)
+
+
+def _unquote_titulo(t) -> str:
+    """Título de exibição: decodifica slug de URL e troca underscores por
+    espaços ("Cuisine_of_Par%C3%A1" → "Cuisine of Pará")."""
+    from urllib.parse import unquote as _unquote
+    return _unquote(str(t or "").strip()).replace("_", " ")
+
+
 def digest_rag(question, docs, limite: int = 4) -> str:
     """Modo rag PURO (pedido do dono 11/09: "quando seleciono só a base, não
     precisa consultar a llm, somente o embedding"): a resposta É o digest dos
@@ -586,12 +610,18 @@ def digest_rag(question, docs, limite: int = 4) -> str:
     Os fragmentos já vêm ordenados (rerank rodou antes). Cada um entra com:
     cabeçalho numerado + TÍTULO + coleção; detritos de citação da Wikipédia
     (<sup>, <ref>, [12]) removidos; e apenas o TRECHO mais parecido com a
-    pergunta (parágrafo ± vizinhos) — não a seção inteira."""
+    pergunta (parágrafo ± vizinhos) — não a seção inteira.
+
+    ⇄ TRADUÇÃO (pedido do dono 12/09: "o retorno tem partes em português e
+    outras em inglês"): pergunta PT + trecho EN → o trecho (e o título com
+    evidência de inglês) sai em PT via opus-mt local, marcado *(traduzido)*.
+    Em LOTE — uma passada do modelo cobre tudo; indisponível = original."""
     from . import limpeza as _limpeza
     termos = _digest_termos(question)
     pergunta_pt = _eh_portugues(question)
-    partes = []
-    for i, d in enumerate(docs[:limite], 1):
+    # 1ª passada: limpa/recorta/título (a tradução vem depois, em lote)
+    itens = []
+    for d in docs[:limite]:
         txt = (d.page_content or "").strip()
         if not txt:
             continue
@@ -609,18 +639,49 @@ def digest_rag(question, docs, limite: int = 4) -> str:
         txt = _RE_NOTA.sub("", txt)
         txt = re.sub(r"[ \t]{2,}", " ", txt)
         txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
-        trecho = _digest_trecho(txt, termos, pergunta_pt)
-        # títulos vindos de SLUG de URL ("Cuisine_of_Par%C3%A1") ficam
-        # ilegíveis — decodifica para exibição
-        from urllib.parse import unquote as _unquote
-        titulo = _unquote((d.metadata.get("titulo") or "").strip())
-        colecao = d.metadata.get("colecao", "")
-        area = d.metadata.get("area", "")
-        origem = " · ".join(x for x in (colecao, area) if x)
-        cab = f"**{i} · {titulo}**" if titulo else f"**{i}**"
+        itens.append({
+            "n": len(itens) + 1,
+            "trecho": _digest_trecho(txt, termos, pergunta_pt),
+            # slug de URL vira título legível ("Cuisine_of_Par%C3%A1" →
+            # "Cuisine of Pará")
+            "titulo": _unquote_titulo(d.metadata.get("titulo")),
+            "colecao": d.metadata.get("colecao", ""),
+            "area": d.metadata.get("area", ""),
+        })
+    for it in itens:
+        it["traduzivel"] = pergunta_pt and not _eh_portugues(it["trecho"])
+    # fila de tradução: trecho + título (só título com evidência REAL de
+    # inglês) de cada item não-PT — UMA passada do modelo cobre tudo
+    pendentes = []
+    for it in itens:
+        if it["traduzivel"]:
+            pendentes.append((it, "trecho"))
+            if it["titulo"] and _eh_ingles(it["titulo"]):
+                pendentes.append((it, "titulo"))
+    if pendentes:
+        from .tradutor import traduzir_lote
+        try:
+            lote = traduzir_lote([it[c] for it, c in pendentes]) or []
+        except Exception:
+            lote = []
+        for (it, campo), novo in zip(pendentes, lote):
+            if novo:
+                it[campo] = novo
+                it["traduzido"] = True
+    # 2ª passada: cabeçalhos numerados + separadores
+    partes = []
+    for it in itens:
+        if it["colecao"] == "🌐 web":
+            origem = it["colecao"]      # "🌐 web · web" seria redundância
+        else:
+            origem = " · ".join(x for x in (it["colecao"], it["area"]) if x)
+        cab = (f"**{it['n']} · {it['titulo']}**" if it["titulo"]
+               else f"**{it['n']}**")
         if origem:
             cab += f" — {origem}"
-        partes.append(cab + "\n\n" + trecho)
+        if it.get("traduzido"):
+            cab += " *(traduzido)*"
+        partes.append(cab + "\n\n" + it["trecho"])
     return "\n\n---\n\n".join(partes)
 
 

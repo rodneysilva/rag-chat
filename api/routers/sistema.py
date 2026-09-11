@@ -262,9 +262,15 @@ def parar_tudo(request: Request):
             motores = {"derrubados": [], "erro": str(e)[:200]}
     else:
         motores = modelos.derrubar_todos_motores(log=log)
-    # 2b) reranker cross-encoder (CPU, residente no PRÓPRIO processo da API):
-    # solta o modelo da memória junto com os motores (política Parar tudo)
+    # 2b) reranker cross-encoder + tradutor opus-mt (CPU, residentes no
+    # PRÓPRIO processo da API): solta os modelos da memória junto com os
+    # motores (política Parar tudo)
     rerank.descarregar()
+    try:
+        from core import tradutor as _trad
+        _trad.descarregar()
+    except Exception:
+        pass
     telemetria.evento("jobs", "⏹ PARAR TUDO executado",
                       jobs=len(cancelados),
                       motores=motores.get("derrubados"))

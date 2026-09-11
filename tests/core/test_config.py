@@ -18,8 +18,8 @@ def env_de_mentira(tmp_path, monkeypatch):
     testes)."""
     original = config.ENV_FILE
     env = tmp_path / ".env"
-    env.write_text("RERANKER=1\nRERANK_MODEL=BAAI/bge-reranker-v2-m3\n",
-                   encoding="utf-8")
+    env.write_text("RERANKER=1\nRERANK_MODEL=BAAI/bge-reranker-v2-m3\n"
+                   "TRADUTOR_MODEL=teste/mt-falso\n", encoding="utf-8")
     monkeypatch.setattr(config, "ENV_FILE", env)
     yield env
     config.ENV_FILE = original
@@ -29,3 +29,4 @@ def env_de_mentira(tmp_path, monkeypatch):
 def test_reload_aplica_rerank_model_do_env(env_de_mentira):
     config.reload()
     assert config.RERANK_MODEL == "BAAI/bge-reranker-v2-m3"
+    assert config.TRADUTOR_MODEL == "teste/mt-falso"

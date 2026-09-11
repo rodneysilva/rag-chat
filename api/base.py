@@ -101,7 +101,7 @@ __all__ = [
     "RAIZ_PROJETO",
     "_despachar",
     "_subir_executor",
-    "_preaquecer_reranker",
+    "_preaquecer_modelos",
     "_ROTAS_PUBLICAS",
     "COOKIE_TOKEN",
     "_LOGIN_TENTATIVAS",
@@ -325,12 +325,12 @@ async def _subir_executor():
     _exec.iniciar(log=lambda m: print(f"⚙️ {m}"))
 
 
-# ⏱️ PRÉ-AQUECIMENTO do reranker (pedido do dono — "por que demorou tanto?"):
-# o bge-reranker (~1,1 GB) é LAZY e a 1ª pergunta pagava ~36 s de
-# download+ carga na CPU. Uma thread daemon aquece no BOOT (5 s de folga
+# ⏱️ PRÉ-AQUECIMENTO dos modelos de CPU (pedido do dono — "por que demorou
+# tanto?"): reranker (~2,3 GB) e tradutor (~300 MB) são LAZY e a 1ª pergunta
+# pagava o download + carga. Uma thread daemon aquece no BOOT (5 s de folga
 # para a API subir primeiro); falha em silêncio — o comportamento lazy
 # original segue como fallback.
-def _preaquecer_reranker() -> None:
+def _preaquecer_modelos() -> None:
     def _aq():
         time.sleep(5)
         try:
@@ -341,11 +341,20 @@ def _preaquecer_reranker() -> None:
                       "não paga o carregamento")
         except Exception as e:
             print(f"🎛️ pré-aquecimento do reranker pulado: {str(e)[:80]}")
+        try:
+            from core import tradutor as _tradutor
+            if _tradutor.disponivel() and getattr(config, "TRADUTOR", True):
+                _tradutor.traduzir("kitchen",
+                                   log=lambda m, g="": print(f"⇄ {m}"))
+                print("⇄ tradutor pré-aquecido no boot — trechos EN saem "
+                      "traduzidos sem pagar a 1ª carga")
+        except Exception as e:
+            print(f"⇄ pré-aquecimento do tradutor pulado: {str(e)[:80]}")
     threading.Thread(target=_aq, daemon=True,
-                     name="preaquecer-reranker").start()
+                     name="preaquecer-modelos").start()
 
 
-_preaquecer_reranker()
+_preaquecer_modelos()
 
 
 # rotas que não exigem login: auth em si, status (o lock da LLM funciona
@@ -983,6 +992,8 @@ _DICAS_CAMPO = {
     "PROMPT_SYSTEM": "Instruções extras fixas em TODAS as respostas (tom, idioma, proibições). Ex.: 'Responda em português, direto, sem repetir a pergunta.'",
     "RERANKER": "1 = reordena os achados com cross-encoder local (precisão melhor, +~2 s por busca). 0 = desliga.",
     "RERANK_MODEL": "Modelo do reranker no HuggingFace. base = leve (1,1 GB); v2-m3 = melhor em PT (2,3 GB) — compare no bench antes de trocar.",
+    "TRADUTOR": "1 = trechos EN do digest rag saem em PT (opus-mt local na CPU, ~300 MB). 0 = desliga (fica no idioma original).",
+    "TRADUTOR_MODEL": "Modelo do tradutor (HuggingFace, seq2seq). Padrão opus-mt-en-PT — só troque por outro Marian EN→PT.",
 }
 
 
@@ -2121,6 +2132,29 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                 } for d in web_docs]
                 log(f"🌐 {len(web_docs)} página(s) da web no contexto — "
                     "cite [n]; as origens entram no painel de fontes", "mcp")
+                # ⚡ RAG PURO RECONSIDERA COM A WEB (pedido do dono 12/09:
+                # "não está considerando a pesquisa que fiz na web"): as
+                # páginas eram anexadas DEPOIS dos fragmentos da base e o
+                # digest (limite 4) as descartava — segundos de download
+                # invisíveis na resposta. O MESMO cross-encoder do rerank
+                # pontua base+web JUNTOS (pares da base = cache hit, custo
+                # só das páginas novas) e a ordem do digest sai dali: a
+                # receita baixada disputa com a base em igualdade. Sem LLM.
+                if body.mode == "rag" and len(docs) >= 2:
+                    rr2 = rerank.rerank(
+                        pergunta_busca or body.question,
+                        [(d, None, d.metadata.get("colecao", ""))
+                         for d in docs[:8]],
+                        top_n=6,
+                        log=lambda m, g="busca": log(m, g))
+                    if rr2:
+                        ordenados, topo2 = rr2
+                        docs = [d for d, _, _ in ordenados]
+                        if sem_sinal_topo is not None \
+                                and topo2 >= rerank.SINAL_MIN:
+                            sem_sinal_topo = None  # a web trouxe o sinal
+                        log(f"🎛️ rerank base+web → {len(docs)} fragmento(s) "
+                            f"no digest (top {topo2:.3f})", "busca")
             else:
                 log("⚠️ a busca web não trouxe nada — seguindo sem ela", "mcp")
         except Exception as e:
@@ -2199,7 +2233,11 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             "PURO: LLM de conversa não consultada", "geração")
         if found:
             contadores.set_etapa("resposta (rag)")
-            answer = rag.digest_rag(body.question, docs)
+            # limite acompanha o conjunto CURADO (rerank top-4 base, top-6
+            # com web, +resgate por versão): o corte fixo de 4 jogava fora
+            # páginas da web e extras de versão que a busca trouxe de propósito
+            answer = rag.digest_rag(body.question, docs,
+                                    limite=min(len(docs), 8))
             contadores.set_etapa(None)
             if sem_sinal_topo is not None:
                 # o reranker (bilíngue) leu a pergunta × cada fragmento e

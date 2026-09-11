@@ -93,6 +93,15 @@ FIELDS = {
                        "BAAI/bge-reranker-base ~1,1 GB · BAAI/bge-reranker-"
                        "v2-m3 ~2,3 GB, PT-BR melhor — compare com "
                        "tests_manual\\bench_rerank.py antes de trocar)", "text"),
+    "TRADUTOR":       ("Aplicação",
+                       "Tradutor local do digest rag (1=liga; trecho EN sai "
+                       "em PT via opus-mt ~300 MB na CPU — degrada em "
+                       "silêncio: sem torch, o texto fica no original)",
+                       "int"),
+    "TRADUTOR_MODEL": ("Aplicação",
+                       "Modelo do tradutor (HuggingFace, seq2seq Marian). "
+                       "Padrão Helsinki-NLP/opus-mt-en-PT (74M, EN→PT)",
+                       "text"),
 }
 
 # chaves cujo valor é SEGREDO: exibidas mascaradas e nunca regravadas
@@ -128,6 +137,8 @@ PROMPT_SYSTEM = ""
 MOCK_LLM = False
 RERANKER = True
 RERANK_MODEL = "BAAI/bge-reranker-base"
+TRADUTOR = True
+TRADUTOR_MODEL = "Helsinki-NLP/opus-mt-en-PT"
 
 
 def set_env(chave: str, valor: str) -> None:
@@ -183,7 +194,7 @@ def reload():
     global SCORE_DIRETO, SCORE_FRACO
     global AUTH_SECRET, AUTH_ADMIN_USER, AUTH_ADMIN_PASS
     global LLAMA_BIN
-    global MOCK_LLM, RERANKER, RERANK_MODEL
+    global MOCK_LLM, RERANKER, RERANK_MODEL, TRADUTOR, TRADUTOR_MODEL
     serper_ambiente = os.environ.get("SERPER_API_KEY", "")  # env real tem prioridade
     # em container: environment do compose VENCE o .env (endpoints de infra);
     # no host: .env é a fonte da verdade (comportamento original)
@@ -221,6 +232,9 @@ def reload():
     MOCK_LLM = _bool_env("MOCK_LLM", False)
     RERANKER = _bool_env("RERANKER", True)
     RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base").strip()
+    TRADUTOR = _bool_env("TRADUTOR", True)
+    TRADUTOR_MODEL = os.getenv("TRADUTOR_MODEL",
+                               "Helsinki-NLP/opus-mt-en-PT").strip()
 
 
 def as_dict():
@@ -246,6 +260,8 @@ def as_dict():
         "PROMPT_SYSTEM": PROMPT_SYSTEM,
         "RERANKER": int(RERANKER),
         "RERANK_MODEL": RERANK_MODEL,
+        "TRADUTOR": int(TRADUTOR),
+        "TRADUTOR_MODEL": TRADUTOR_MODEL,
     }
 
 
