@@ -488,11 +488,15 @@ def hx_revisao_aplicar(request: Request, preview: str = Form(...),
 
 
 @router.get("/api/collections")
-def collections():
-    """Coleções com pontos, dimensão e metadados do catálogo (categoria/descrição)."""
+def collections(forcar: bool = False):
+    """Coleções com pontos, dimensão e metadados do catálogo (categoria/descrição).
+
+    `forcar=True` pula o cache de 30 s — usado no RENDER da Biblioteca: a
+    grade precisa refletir o Qdrant de verdade na carga da página (não o
+    scan de antes de uma exclusão/criação)."""
     try:
         client = QdrantClient(url=config.QDRANT_URL, timeout=10, check_compatibility=False)
-        info = _scan_collections(client)
+        info = _scan_collections(client, forcar=forcar)
         meta = catalog.list_meta(client)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Qdrant indisponível: {e}")
@@ -517,6 +521,7 @@ def apagar_collection(nome: str):
     pontos = client.count(nome, exact=True).count
     client.delete_collection(nome)
     catalog.remove_collection_meta(client, nome)
+    _scan_invalidar()   # grade da Biblioteca reflete a exclusão NA HORA
     print(f"🗑️  Coleção '{nome}' apagada ({pontos} pontos)")
     return {"removida": nome, "pontos": pontos}
 

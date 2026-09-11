@@ -1067,6 +1067,15 @@ _SCAN_CACHE: dict = {"t": 0.0, "data": {}}
 _SCAN_CACHE_TTL = 30.0
 
 
+def _scan_invalidar():
+    """Zera o cache do scan de coleções — chamado após APAGAR coleção.
+
+    Sem isso a grade da Biblioteca 'fantasiava' a coleção excluída por até
+    30 s ao recarregar a página (a exclusão no Qdrant já tinha terminado,
+    mas o cache servia a lista de antes — parecia exclusão inacabada)."""
+    _SCAN_CACHE.update(t=0.0, data={})
+
+
 def _scan_collections(client, incluir_sistema: bool = False, forcar: bool = False) -> dict:
     """{nome: {points, dim}} lendo a configuração de cada coleção do Qdrant.
 
@@ -1087,7 +1096,12 @@ def _scan_collections(client, incluir_sistema: bool = False, forcar: bool = Fals
             info[c.name] = {"points": col.points_count, "dim": dim}
         except Exception:
             info[c.name] = {"points": None, "dim": None}
-    _SCAN_CACHE.update(t=agora, data=info)
+    # SÓ a variante SEM sistema escreve no cache: o scan com
+    # incluir_sistema=True (webui) não pode poluí-lo — senão
+    # /api/collections e o seletor do chat servem meta_colecoes/
+    # sessoes_chat como coleções comuns por até 30 s
+    if not incluir_sistema:
+        _SCAN_CACHE.update(t=agora, data=info)
     return info
 
 

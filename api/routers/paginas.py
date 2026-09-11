@@ -111,7 +111,10 @@ def pagina_chat_sid(sid: str, request: Request):
 def pagina_biblioteca(request: Request):
     ctx = _paginas_ctx(request, "biblioteca")
     try:
-        cols = collections() or []
+        # forcar=True: a grade é a FONTE DA VERDADE na carga da página —
+        # sem isso, o cache de 30 s podia trazer de volta coleção recém-
+        # apagada ("exclusão fantasma")
+        cols = collections(forcar=True) or []
     except Exception:
         cols = []
     ctx["colecoes"] = cols
