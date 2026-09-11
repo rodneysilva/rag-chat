@@ -159,6 +159,7 @@ __all__ = [
     "_SCAN_CACHE",
     "_SCAN_CACHE_TTL",
     "_scan_collections",
+    "_scan_invalidar",
     "_ATIVOS_CACHE",
     "modelos_ativos",
     "_STATUS_CACHE",
