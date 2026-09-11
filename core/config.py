@@ -95,8 +95,9 @@ FIELDS = {
                        "tests_manual\\bench_rerank.py antes de trocar)", "text"),
     "TRADUTOR":       ("Aplicação",
                        "Tradutor local do digest rag (1=liga; trecho EN sai "
-                       "em PT via opus-mt ~300 MB na CPU — degrada em "
-                       "silêncio: sem torch, o texto fica no original)",
+                       "em PT via opus-mt no motor ctranslate2 int8 (CPU) — "
+                       "degrada em silêncio: sem o pacote, o texto fica no "
+                       "original)",
                        "int"),
     "TRADUTOR_MODEL": ("Aplicação",
                        "Modelo do tradutor (HuggingFace, seq2seq Marian "

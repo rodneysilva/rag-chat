@@ -3,9 +3,11 @@
 Pedido do dono 12/09 ("o retorno tem partes em português e outras em inglês"):
 no modo rag puro não há LLM de conversa para reescrever a resposta — os
 trechos em inglês passam por um tradutor LOCAL dedicado (MarianMT/opus-mt,
-seq2seq de ~110M parâmetros rodando na CPU) antes de entrar no digest.
-Tradução é APRESENTAÇÃO: nunca é ponto de falha e nunca acorda a GPU da
-estação.
+seq2seq de ~110M parâmetros) antes de entrar no digest. O motor de execução
+é o ctranslate2 INT8 na CPU (transformers+torch fp32 media >10 min por lote
+na VPS de 2 vCPU — CT2 int8 devolve em segundos; a conversão roda 1x e fica
+em cache). Tradução é APRESENTAÇÃO: nunca é ponto de falha e nunca acorda a
+GPU da estação.
 
 ## Regras
 
@@ -23,16 +25,16 @@ estação.
 5. Indisponível (flag desligada / torch ausente / erro de inferência) =
    trecho no idioma original, aviso único em silêncio — a resposta nunca
    derruba por causa da tradução.
-6. Geração GREEDY (sem beam search) com teto de ~350 tokens por item: em
-   CPU de 2 núcleos o beam search em lote custava MINUTOS — apresentação
-   não pode travar a resposta.
+6. Geração GREEDY (beam 1) com teto de ~350 tokens por item, no motor
+   ctranslate2 INT8: apresentação não pode travar a resposta.
 
 ## Palavras usadas pelo código
 
 (O código lê estas linhas; editar aqui muda o texto exibido sem rebuild.)
 
 MARCADOR_TRADUZIDO: *(traduzido)*
-MSG_CARREGANDO: ⇄ carregando tradutor ({modelo}, CPU; 1ª vez baixa para o cache do HF)…
-MSG_INDISPONIVEL: ⇄ tradutor indisponível (torch não instalado) — os fragmentos ficam no idioma original
+MSG_CARREGANDO: ⇄ carregando tradutor ({modelo}, CPU; 1ª vez baixa/converte para o cache)…
+MSG_CONVERTENDO: ⇄ 1ª vez: convertendo o modelo para ctranslate2 int8 (usa torch, ~1 min; as próximas cargas abrem direto)…
+MSG_INDISPONIVEL: ⇄ tradutor indisponível (ctranslate2 não instalado) — os fragmentos ficam no idioma original
 MSG_FALHA: ⚠️ tradução falhou ({erro}) — trechos no idioma original
 MSG_PREAQUECIDO: ⇄ tradutor pré-aquecido no boot — trechos EN saem traduzidos sem pagar a 1ª carga

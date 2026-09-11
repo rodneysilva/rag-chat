@@ -19,6 +19,8 @@ python-dotenv==1.2.2
 torch==2.13.0            # reranker cross-encoder (bge-reranker)
 transformers==5.15.1
 sentencepiece==0.2.2     # tokenizer do Marian (tradutor opus-mt do digest rag)
+ctranslate2==4.8.2       # motor do tradutor: Marian int8 na CPU (torch fp32 media >10 min/lote na VPS)
+sacremoses==0.2.0        # tokenização Moses do Marian (sem isto a qualidade da tradução cai)
 jinja2==3.1.6
 trafilatura==2.2.0
 markdown==3.7
