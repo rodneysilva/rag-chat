@@ -183,7 +183,7 @@ def reload():
     global SCORE_DIRETO, SCORE_FRACO
     global AUTH_SECRET, AUTH_ADMIN_USER, AUTH_ADMIN_PASS
     global LLAMA_BIN
-    global MOCK_LLM, RERANKER
+    global MOCK_LLM, RERANKER, RERANK_MODEL
     serper_ambiente = os.environ.get("SERPER_API_KEY", "")  # env real tem prioridade
     # em container: environment do compose VENCE o .env (endpoints de infra);
     # no host: .env é a fonte da verdade (comportamento original)
