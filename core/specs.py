@@ -8,6 +8,7 @@ RAG — dá para perguntar no chat como o sistema funciona.
 """
 from functools import lru_cache
 from pathlib import Path
+import re
 
 SPECS_DIR = Path(__file__).resolve().parent / "specs"
 
@@ -19,6 +20,18 @@ def spec(name: str) -> str:
     o chat (já aconteceu: 'utf-8 codec can't decode 0xf3' virou resposta)."""
     return (SPECS_DIR / f"{name}.md").read_text(encoding="utf-8",
                                                 errors="replace")
+
+
+def valor(name: str, chave: str, padrao: str = "") -> str:
+    """Valor de uma linha `CHAVE: texto` dentro da spec — as PALAVRAS
+    exibidas ao usuário vivem na spec (regra do projeto: comportamento em
+    spec, não no código). `padrao` é o fallback se a linha ou a spec
+    inteira sumirem — texto de exibição nunca derruba o fluxo."""
+    try:
+        m = re.search(rf"(?m)^{re.escape(chave)}\s*:\s*(.+)$", spec(name))
+        return (m.group(1).strip() if m else "") or padrao
+    except Exception:
+        return padrao
 
 
 def recarregar() -> int:

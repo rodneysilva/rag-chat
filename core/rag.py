@@ -668,7 +668,9 @@ def digest_rag(question, docs, limite: int = 4) -> str:
             if novo:
                 it[campo] = novo
                 it["traduzido"] = True
-    # 2ª passada: cabeçalhos numerados + separadores
+    # 2ª passada: cabeçalhos numerados + separadores (o marcador de tradução
+    # vive na spec core/specs/traducao.md — palavras ao usuário fora do código)
+    from .tradutor import palavra as _palavra_trad
     partes = []
     for it in itens:
         if it["colecao"] == "🌐 web":
@@ -680,7 +682,7 @@ def digest_rag(question, docs, limite: int = 4) -> str:
         if origem:
             cab += f" — {origem}"
         if it.get("traduzido"):
-            cab += " *(traduzido)*"
+            cab += " " + _palavra_trad("MARCADOR_TRADUZIDO", "*(traduzido)*")
         partes.append(cab + "\n\n" + it["trecho"])
     return "\n\n---\n\n".join(partes)
 

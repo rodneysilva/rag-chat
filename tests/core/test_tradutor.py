@@ -23,3 +23,19 @@ def test_descarregar_solta_o_modelo():
     tradutor._modelos["teste/falso"] = ("tok", "mod")
     tradutor.descarregar()
     assert tradutor._modelos == {}
+
+
+def test_palavras_vivem_na_spec_nao_no_codigo():
+    """Regra do projeto (pedido do dono): texto exibido ao usuário vem da
+    spec core/specs/traducao.md — o marcador do digest e as mensagens de
+    log são LIDOS de lá, com fallback embutido se a spec sumir."""
+    # marcador real: lido da spec que existe no repo
+    marcador = tradutor.palavra("MARCADOR_TRADUZIDO", "*(fallback)*")
+    assert marcador.startswith("*(") and marcador.endswith(")*")
+    assert marcador != "*(fallback)*"          # a spec foi a fonte
+    # substituição de {campo} na mensagem da spec
+    msg = tradutor.palavra("MSG_FALHA", "erro {erro}",
+                           erro="boom")
+    assert "boom" in msg and "{" not in msg
+    # chave inexistente na spec: fallback embutido SEM estourar
+    assert tradutor.palavra("CHAVE_INEXISTENTE", "seguro") == "seguro"

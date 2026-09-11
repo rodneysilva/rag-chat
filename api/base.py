@@ -348,8 +348,10 @@ def _preaquecer_modelos() -> None:
                 # None em erro engolido e o "pré-aquecido" não pode mentir
                 if _tradutor.traduzir("kitchen",
                                       log=lambda m, g="": print(f"⇄ {m}")):
-                    print("⇄ tradutor pré-aquecido no boot — trechos EN "
-                          "saem traduzidos sem pagar a 1ª carga")
+                    print(_tradutor.palavra(
+                        "MSG_PREAQUECIDO",
+                        "⇄ tradutor pré-aquecido no boot — trechos EN saem "
+                        "traduzidos sem pagar a 1ª carga"))
         except Exception as e:
             print(f"⇄ pré-aquecimento do tradutor pulado: {str(e)[:80]}")
     threading.Thread(target=_aq, daemon=True,

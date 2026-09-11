@@ -14,6 +14,21 @@ _modelos: dict[str, tuple] = {}   # id do modelo -> (tokenizer, model)
 _aviso_indisponivel = False       # loga a degradação 1x só
 
 
+def palavra(chave: str, padrao: str, **subs) -> str:
+    """Texto de EXIBIÇÃO do tradutor, lido da spec core/specs/traducao.md
+    (regra do projeto: palavras ao usuário vivem na spec, não no código —
+    editar a spec muda o texto sem rebuild). `{campo}` no texto é trocado
+    pelos `subs`; spec ausente/linha sumida = fallback embutido."""
+    try:
+        from .specs import valor as _valor
+        texto = _valor("traducao", chave, padrao)
+    except Exception:
+        texto = padrao
+    for k, v in subs.items():
+        texto = texto.replace("{" + k + "}", str(v))
+    return texto
+
+
 def disponivel() -> bool:
     """torch+transformers importáveis (sem baixar nada)."""
     try:
@@ -27,8 +42,9 @@ def disponivel() -> bool:
 def _carregar(modelo: str, log):
     """Carrega (1x por processo e por modelo) o seq2seq do cache do HF."""
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-    log(f"⇄ carregando tradutor ({modelo}, CPU; 1ª vez baixa para o cache "
-        "do HF)…")
+    log(palavra("MSG_CARREGANDO",
+                "⇄ carregando tradutor ({modelo}, CPU; 1ª vez baixa para o "
+                "cache do HF)…", modelo=modelo))
     tok = AutoTokenizer.from_pretrained(modelo)
     mod = AutoModelForSeq2SeqLM.from_pretrained(modelo)
     mod.eval()
@@ -53,8 +69,9 @@ def traduzir_lote(textos: list[str], log=print,
     if not disponivel():
         if not _aviso_indisponivel:
             _aviso_indisponivel = True
-            log("⇄ tradutor indisponível (torch não instalado) — os "
-                "fragmentos ficam no idioma original", "busca")
+            log(palavra("MSG_INDISPONIVEL",
+                        "⇄ tradutor indisponível (torch não instalado) — os "
+                        "fragmentos ficam no idioma original"), "busca")
         return None
     modelo = modelo or getattr(config, "TRADUTOR_MODEL",
                                "Helsinki-NLP/opus-mt-tc-big-en-pt")
@@ -66,13 +83,19 @@ def traduzir_lote(textos: list[str], log=print,
         with torch.no_grad():
             entradas = tok(limpos, return_tensors="pt", padding=True,
                            truncation=True, max_length=512)
-            saidas = mod.generate(**entradas, num_beams=2,
-                                  max_new_tokens=600)
+            # GREEDY + teto realista: trecho do digest tem ≤900 chars ≈
+            # ~250 tokens de saída. Medido na VPS (2 vCPU): beams=2 com
+            # 600 tokens levava MINUTOS por lote — greedy com 350 sai em
+            # dezenas de segundos e a qualidade do Marian em prosa de
+            # enciclopédia se mantém.
+            saidas = mod.generate(**entradas, num_beams=1,
+                                  max_new_tokens=350)
         return [tok.decode(s, skip_special_tokens=True).strip() or None
                 for s in saidas]
     except Exception as e:
-        log(f"⚠️ tradução falhou ({str(e)[:120]}) — trechos no idioma "
-            "original", "busca")
+        log(palavra("MSG_FALHA",
+                    "⚠️ tradução falhou ({erro}) — trechos no idioma original",
+                    erro=str(e)[:120]), "busca")
         return None
 
 
