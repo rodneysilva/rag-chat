@@ -44,7 +44,9 @@ def env_ler() -> dict:
             ln = ln.strip()
             if ln and not ln.startswith("#") and "=" in ln:
                 k, v = ln.split("=", 1)
-                dados[k.strip()] = v.strip()
+                # aspas do valor são sintaxe do dotenv — sem tirar, a chave
+                # ia com aspas no --api-key/Bearer (401 com o server são)
+                dados[k.strip()] = v.strip().strip('"').strip("'")
     return dados
 
 

@@ -115,6 +115,13 @@ def _override() -> dict | None:
     return getattr(_TL, "prov", None)
 
 
+def usa_llm_local() -> bool:
+    """Esta execução usa o llama-server LOCAL? (False = provedor externo no
+    override — glm/deepseek/openai… não toca a GPU da estação, e o ciclo
+    frio do chat não deve religar nada por causa dela.)"""
+    return not _override()
+
+
 def llm(temperature=None):
     """LLM de conversa via API (/v1/chat/completions) do llama-server — OU
     de um PROVEDOR EXTERNO quando a execução tem override (glm, deepseek,
@@ -128,6 +135,19 @@ def llm(temperature=None):
     servidor) no acumulador global por serviço — tudo que passa pela LLM
     é medido, onde quer que seja chamada (chat, ingestão, estúdio…).
     """
+    # CICLO FRIO (pedido do dono 10/09): a estação derruba o chat ocioso
+    # (5 min) e quem RELIGA é quem precisa — a fábrica é o gargalo COMUM
+    # de todo consumidor de LLM local (reformulação, categorização do
+    # ingest, pesquisa, manutenção); a espera é narrada no log da THREAD
+    # (contadores.log_atual dentro do garantir_llm). Erro engolido: frio
+    # + agente fora → o erro REAL (conexão) nasce no invoke, no lugar de
+    # um motivo distante aqui na construção do cliente.
+    if not _override():
+        from . import modelos as _m
+        try:
+            _m.garantir_llm()
+        except Exception:
+            pass
     from . import contadores
 
     class LLMContada(ChatOpenAI):

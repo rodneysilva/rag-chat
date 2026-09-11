@@ -319,6 +319,43 @@ def garantir_embedding(log=print) -> bool:
     return ok
 
 
+def garantir_llm(log=None) -> bool:
+    """Garante o modelo de CONVERSA no ar — CICLO FRIO da estação (pedido
+    do dono 10/09: o agente derruba o container do chat após 5 min ocioso
+    para poupar GPU; a próxima chamada que precise gerar texto o RELIGA
+    AQUI, com a espera narrada no log do job).
+
+    Container: TWO-STEP como a troca de modelo — POST /llm/ligar volta NA
+    HORA (docker start; esperar os ~90 s de carga estouraria o timeout
+    ~100 s da borda do Cloudflare) e o ESPERA é local, no polling
+    servido(forcar=True) direto pelo túnel. Sem `log`, narra no log da
+    THREAD (contadores.log_atual) — ingest, pesquisa e manutenção ganham
+    as mesmas linhas sem cada chamador se preocupar."""
+    from . import config as _cfg
+    from . import contadores as _cont
+    _log = log or _cont.log_atual() or (lambda m, *a: None)
+    if servido(CHAT_PORTA):
+        return True  # no ar (cache 10 s): o custo da verificação é zero
+    if _cfg.EM_CONTAINER:
+        _log("🧠 modelo de conversa FRIO (estação poupava a GPU) — ligando…",
+             "modelo")
+        _chamar_agente("/llm/ligar", timeout=30)  # inicia o container e volta
+        t0 = time.time()
+        while time.time() - t0 < 300:
+            time.sleep(5)
+            alias = servido(CHAT_PORTA, forcar=True)
+            if alias:
+                _log(f"🧠 {alias} no ar ({int(time.time() - t0)} s de carga)",
+                     "modelo")
+                return True
+        raise RuntimeError("modelo de conversa não subiu na estação em 300 s "
+                           "— confira o agente/docker na máquina da GPU")
+    # host direto (dev sem container): o .env diz qual GGUF — mesmo ritual
+    # da troca (a ativar devolve "trocou: False" quando já está no ar)
+    r = ativar(_cfg.LLM_MODEL, log=_log)
+    return bool(r.get("trocou")) or servido(CHAT_PORTA) is not None
+
+
 def liberar_embedding(log=print) -> None:
     """Libera a VRAM do embedding (difusão pesada / fim de trabalho vetorial).
     A próxima chamada de busca/ingestão o religa sozinho (garantir_embedding)."""
@@ -348,7 +385,7 @@ def _auth_headers() -> dict:
     return {"Authorization": f"Bearer {chave}"} if chave else {}
 
 
-def servido(porta: int = CHAT_PORTA) -> str | None:
+def servido(porta: int = CHAT_PORTA, forcar: bool = False) -> str | None:
     """Alias do modelo que a porta está servindo agora (None se fora do ar).
 
     Em produção a LLM de CONVERSA vem pelo TÚNEL (LLM_BASE_URL https://…) —
@@ -360,11 +397,14 @@ def servido(porta: int = CHAT_PORTA) -> str | None:
     achava que NENHUM modelo estava no ar e RECARREGAVA o mesmo modelo a
     cada mensagem. O sufixo '/v1' é removido antes de montar a consulta.
     Cache de 10 s: a consulta cruza a internet em produção (2× por página
-    carregada = chat lento)."""
+    carregada = chat lento). `forcar=True` pula a LEITURA do cache (o
+    polling de garantir_llm roda a cada 5 s — sem isso o None cacheado
+    renascia a cada consulta e o 'no ar' nunca chegava; a escrita segue)."""
     chave = "chat" if porta == CHAT_PORTA else "embed" if porta == EMBED_PORTA else str(porta)
     agora = time.time()
     with _servido_lock:
-        if chave in _servido_cache and agora - _servido_cache.get("t", 0) < _SERVIDO_TTL:
+        if (not forcar and chave in _servido_cache
+                and agora - _servido_cache.get("t", 0) < _SERVIDO_TTL):
             return _servido_cache[chave]
     base = ""
     if porta == CHAT_PORTA and str(getattr(config, "LLM_BASE_URL", "")).startswith("http"):

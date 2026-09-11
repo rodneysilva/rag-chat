@@ -1521,6 +1521,15 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             "(LLM não consultada: a data do treinamento do modelo mente)",
             "resposta")
         return _rel
+    # 🧠 CICLO FRIO DA ESTAÇÃO (pedido do dono 10/09): o container do chat é
+    # derrubado após 5 min ocioso (economia de GPU) e religado AQUI — antes
+    # de cache/Qdrant/roteador, para a espera de carga (~90 s) aparecer no
+    # log DE CARA, não depois das etapas de busca. Provedor externo (override
+    # setado acima) não toca a GPU da estação. Falha aqui = estação
+    # inalcançável: o job morre com o motivo claro em vez de erro de conexão
+    # críptico lá na geração.
+    if rag.usa_llm_local():
+        modelos.garantir_llm(log=log)
     # 🌐 WEB POR INTENÇÃO: o pedido de busca na MENSAGEM ativa o mesmo
     # motor do MCP "pesquisa-web" (DuckDuckGo → Serper, páginas inteiras
     # como fragmentos [n]) — sem depender de marcar nada no composer.
