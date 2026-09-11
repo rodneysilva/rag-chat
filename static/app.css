@@ -17,6 +17,10 @@
     --borda: #d9dee4; --acento: #0f62fe; --acento-suave: #e8f0ff;
     --ok: #0e8345; --erro: #c2410c; --aviso: #b45309; --fundo-codigo: #f0f2f5;
     --altura-topo: 3.55rem;   /* header do app-shell (padding .65 + conteúdo) */
+    /* color-scheme ALINHA os widgets do navegador (textarea, select, scrollbar)
+       AO TEMA DA PÁGINA — sem ele o SO pinta o widget: SO escuro + tema claro
+       = textarea escuro com texto escuro (bug do modal de documento 11/09) */
+    color-scheme: light;
   }
   /* 🎨 TEMA: o SISTEMA segue prefers-color-scheme; o TOGGLE manual do topo
      (☀️/🌙) grava data-tema no <html> e VENCE o automático. Os 2 blocos
@@ -27,12 +31,14 @@
       --bg: #101418; --card: #171d24; --texto: #e8eaed; --suave: #9aa4b1;
       --borda: #2a323c; --acento: #6ea0ff; --acento-suave: #1b2a44;
       --ok: #34d399; --erro: #f87171; --aviso: #fbbf24; --fundo-codigo: #0d1117;
+      color-scheme: dark;
     }
   }
   :root[data-tema="escuro"] {
     --bg: #101418; --card: #171d24; --texto: #e8eaed; --suave: #9aa4b1;
     --borda: #2a323c; --acento: #6ea0ff; --acento-suave: #1b2a44;
     --ok: #34d399; --erro: #f87171; --aviso: #fbbf24; --fundo-codigo: #0d1117;
+    color-scheme: dark;
   }
 }
 
@@ -860,22 +866,27 @@ figure.cod code { background: none; padding: 0; border: 0;
 .kpi-suave { opacity: .8; cursor: help; }
 
 /* == EDICAO de documento (Biblioteca): textarea com o texto completo ==
-   (antes vivia DEPOIS do {% endblock %} do template — CSS morto) */
+   (antes vivia DEPOIS do {% endblock %} do template — CSS morto).
+   Cores EXPLÍCITAS nas vars reais (--fundo-codigo/--texto): herdar deixava
+   o widget pintar pelo SO e virava texto escuro em fundo escuro. */
 .doc-editar-texto {
   width: 100%;
   min-height: 18rem;
   max-height: 37rem;
   overflow-y: auto;
-  font-family: var(--mono, ui-monospace, monospace);
+  font-family: ui-monospace, Consolas, monospace;
   font-size: .82rem;
   line-height: 1.5;
   padding: .8rem;
   border-radius: .6rem;
-  border: 1px solid var(--borda, #8884);
-  background: var(--fundo-alto, transparent);
-  color: inherit;
+  border: 1px solid var(--borda);
+  background: var(--fundo-codigo);
+  color: var(--texto);
   white-space: pre-wrap;
 }
+.doc-editar-acoes { display: flex; flex-wrap: wrap; gap: .5rem;
+  margin-top: .6rem; align-items: center; }
+.doc-editar-status { min-width: 0; }
 
 /* == RESUMO PT da aquisicao (revisao) == */
 .resumo-pt { margin-top:.6rem; padding:.6rem .8rem; border-radius:9px;

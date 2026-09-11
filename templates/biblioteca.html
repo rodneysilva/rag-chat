@@ -410,7 +410,10 @@
   }
   // MODAL de detalhes (a lista corta o conteúdo em 160 chars): o modal
   // nativo <dialog> LARGO (padrão global) traz o documento por inteiro,
-  // tipografia de leitura + ESC/backdrop fecham.
+  // tipografia de leitura + ESC/backdrop fecham. O fragmento entra
+  // INTEIRO — #doc-blocos (leitura) + #doc-editar[hidden] (edição):
+  // normalizar o HTML aqui já destruiu o hidden e a linha de botões
+  // (bug 11/09: textarea/✓ salvar apareciam quebrados na leitura).
   async function abrirDocModal(nome, chave) {
     const dlg = document.getElementById("doc-modal");
     const corpo = document.getElementById("doc-modal-corpo");
@@ -420,17 +423,10 @@
     try {
       const r = await fetch("/hx/colecao/" + encodeURIComponent(nome)
                             + "/doc?chave=" + encodeURIComponent(chave));
-      const html = await r.text();
-      // título do modal = 1º <b>/h do conteúdo; corpo vira bloco de leitura
-      const d = document.createElement("div");
-      d.innerHTML = html;
-      const b = d.querySelector("b, h1, h2, h3");
-      if (b && cab) { cab.textContent = b.textContent.slice(0, 90); b.remove(); }
-      else if (cab) { cab.textContent = "documento"; }
-      corpo.innerHTML = '<div class="doc-texto">'
-          + d.innerHTML.replace(/<\/?(div|p|pre)[^>]*>/gi, "\n")
-              .replace(/\n{3,}/g, "\n\n").trim()
-          + "</div>";
+      corpo.innerHTML = await r.text();
+      const raiz = corpo.querySelector("#doc-blocos");
+      if (cab) cab.textContent =
+        ((raiz && raiz.dataset.titulo) || "documento").slice(0, 90);
     } catch (e) {
       corpo.innerHTML = '<p class="erro-texto">falha: ' + e.message + "</p>";
     }
@@ -458,20 +454,20 @@
     if (!ta || !ta.value.trim()) { if (st) st.textContent = "texto vazio"; return; }
     if (!confirm("Salvar substitui TODOS os chunks deste documento pelo texto editado (snapshot de seguranca e gravado antes). Continuar?")) return;
     if (btn) btn.disabled = true;
-    if (st) st.textContent = "salvando e reingestando...";
+    if (st) { st.textContent = "salvando e reingestando…"; st.classList.remove("erro-texto"); }
     try {
       const fd = new URLSearchParams();
       fd.set("chave", chave);
       fd.set("texto", ta.value);
       const r = await fetch("/hx/colecao/" + encodeURIComponent(nome) + "/editar", {
         method: "POST", body: fd });
-      const txt = await r.text();
-      if (st) {
-        st.innerHTML = txt;
-        if (!r.ok) st.classList.add("erro-texto");
-      }
+      if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+      // ✓ recarrega o documento JÁ REINGERIDO: volta no modo leitura com os
+      // chunks novos (o POST só responde depois da reingestão terminar)
+      toast("✓ salvo e reingerado — exibindo o documento atualizado");
+      abrirDocModal(nome, chave);
     } catch (e) {
-      if (st) st.textContent = "falha: " + e.message;
+      if (st) { st.textContent = "falha: " + e.message; st.classList.add("erro-texto"); }
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -479,13 +475,16 @@
 </script>
 
 {# MODAL de documento — GRANDE (leitura), padrão global: dialog nativo
-   (ESC fecha no base.html) + .modal-caixa.larga (78rem) #}
+   (ESC fecha no base.html) + .modal-caixa.larga (78rem). O corpo recebe o
+   fragmento _colecao_doc.html INTEIRO (leitura + edição escondida). #}
 <dialog id="doc-modal" class="modal-caixa larga" style="border:none; padding:0;">
   <div class="modal-cab">
     <b>documento</b>
     <span style="display:flex; gap:.5rem;">
+      {% if admin %}
       <button type="button" class="acao-btn" onclick="toggleDocEdicao(true)"
               title="editar o texto completo deste documento (salvar reingera)">✎ editar</button>
+      {% endif %}
       <button type="button" class="acao-btn" data-fechar
               onclick="document.getElementById('doc-modal').close()"
               title="fechar (Esc)">✕ fechar</button>

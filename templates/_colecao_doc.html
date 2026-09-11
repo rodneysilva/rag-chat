@@ -1,8 +1,10 @@
-{# CONTEÚDO do documento para o MODAL LARGO da Biblioteca: título no
-   cabeçalho (o JS extrai), documento COMPLETO em bloco de leitura +
-   MODO EDIÇÃO (pedido do dono 28/08): textarea com o texto inteiro —
-   salvar apaga os chunks do doc e REINGERA pelo pipeline. #}
-<div class="doc-blocos" id="doc-blocos">
+{# CONTEÚDO do documento para o MODAL LARGO da Biblioteca. O JS injeta este
+   fragmento INTEIRO no corpo do modal — nada de normalizar/achatar: a
+   estrutura (ids, hidden, classes) é o contrato do toggle de edição.
+   - #doc-blocos  → modo LEITURA (chunks numerados)
+   - #doc-editar  → modo EDIÇÃO ([hidden] até o ✎ editar do cabeçalho)
+   Título via data-titulo (o JS copia pro cabeçalho do modal). #}
+<div class="doc-blocos" id="doc-blocos" data-titulo="{{ titulo | e }}">
   {% for c in chunks %}
   <section class="doc-bloco">
     <div class="mini" style="opacity:.6; margin-bottom:.2rem;">trecho {{ loop.index }}/{{ total }}</div>
@@ -14,16 +16,21 @@
   {% endif %}
 </div>
 
-{# ── MODO EDIÇÃO ── textarea com o texto completo; salvar POSTA em
-   /hx/colecao/{nome}/editar (admin) — snapshot automático antes. #}
+{# ── MODO EDIÇÃO (pedido do dono 28/08) ── textarea com o texto completo;
+   salvar POSTA em /hx/colecao/{nome}/editar (admin) — snapshot automático
+   antes de apagar e reingestar pelo pipeline. #}
 <div id="doc-editar" hidden>
+  <p class="mini" style="margin:.1rem 0 .5rem;">
+    editar o documento <b>inteiro</b> — salvar apaga os {{ total }} chunk(s) e
+    reingera pelo pipeline (snapshot de segurança antes).
+  </p>
   <textarea id="doc-editar-texto" class="doc-editar-texto"
             spellcheck="false">{{ texto_completo }}</textarea>
-  <div style="display:flex; gap:.5rem; margin-top:.6rem; align-items:center;">
+  <div class="doc-editar-acoes">
     <button type="button" class="primario" id="doc-editar-salvar"
       data-colecao="{{ nome | e }}" data-chave="{{ chave | e }}">
       ✓ salvar e reingestar</button>
     <button type="button" class="acao-btn" onclick="toggleDocEdicao(false)">✕ cancelar</button>
-    <span class="mini" id="doc-editar-status"></span>
+    <span class="mini doc-editar-status" id="doc-editar-status"></span>
   </div>
 </div>
