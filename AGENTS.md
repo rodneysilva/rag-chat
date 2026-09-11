@@ -36,20 +36,31 @@ Regras:
 
 ### 🏭 ONDE RODA O QUÊ — política fixa do dono
 
-**A GPU é SEMPRE a ESTAÇÃO do dono** (a máquina local). O servidor NÃO
-hospeda llama: nenhum llama-server, nenhum GGUF — os modelos de
-conversa/embedding rodam na estação e a produção os alcança pelos túneis
-(`llm.disroy.org` :8090 · `embed.disroy.org` :8081 ·
-`agente.disroy.org` :8010). No servidor vivem SÓ os serviços de
-aplicação: `api` (FastAPI+webui), `sandbox` (teste de código),
-`traefik`/`cloudflared`.
+**Produção = tudo container, nada no terminal** (decisão 10/09/2026):
+
+- **VPS (Oracle arm64)**: `ragchat-api` + `ragchat-sandbox` (stack compose
+  `rag-chat`, em `~/apps/rag-chat`) servem **https://rag.disroy.org** via
+  túnel Cloudflare + Traefik. Nenhuma porta publicada.
+- **Estação (GPU)**: `ragchat-llm` (chat :8090) + `ragchat-embed` (bge-m3
+  :8081) em containers CUDA (`~/infra/services/ragchat-llm/`), expostos
+  pelos túneis `llm.disroy.org` / `embed.disroy.org` — a API da VPS os
+  consome por HTTPS com API key (`--api-key` zero-trust).
+- **Portainer** (paas.disroy.org) gerencia os DOIS ambientes: `primary`
+  (VPS) e `estacao-rodne` (Docker Desktop local). Stacks aparecem como
+  "external" (foram criadas por compose/SSH, não pelo Portainer) —
+  start/stop/logs/console funcionam normalmente.
+
+Modo host (`uvicorn`, `servicos_llm.py`, `agente_host`) ficou como
+DESENVOLVIMENTO na estação — produção é sempre container.
 
 ### ⚠️ QDRANT COMPARTILHADO (decisão do fork)
 
-O fork **usa a MESMA instância Qdrant do rag-llama**
-(`http://localhost:6333`, dados em `rag-llama/qdrant_data`) — nenhum
-qdrant no compose do fork. As coleções EXISTENTES aparecem sozinhas no
-seletor (`_scan_collections` é 100% dinâmico). Consequências:
+O fork **usa a MESMA instância Qdrant do rag-llama** — na VPS de
+produção é o container `ragaroy-qdrant` (rede `rag-llama_default`,
+`QDRANT_URL=http://ragaroy-qdrant:6333`); em dev na estação é
+`http://localhost:6333`. Nenhum qdrant no compose do fork. As coleções
+EXISTENTES aparecem sozinhas no seletor (`_scan_collections` é 100%
+dinâmico). Consequências:
 
 - `EMBED_MODEL` **tem que continuar bge-m3** (1024 dims — a dimensão
   das coleções existentes; trocar exige reingestão total).
@@ -63,11 +74,11 @@ seletor (`_scan_collections` é 100% dinâmico). Consequências:
 
 | Serviço | Onde | Porta | Notas |
 |---|---|---|---|
-| Qdrant | instância do rag-llama | :6333 API / :6334 dashboard | compartilhado — fork não sobe o seu |
-| llama-server chat | `<pasta-do-usuario>\llama.cpp\bin` | :8090 | 2 slots: `-c 32768 -np 2 -fa on -ctk/-ctv q8_0` |
-| llama-server embedding (bge-m3) | idem | :8081 | **SEMPRE ligado** — nada pode derrubá-lo |
-| agente do host | `python -X utf8 -m api.agente_host` | :8010 | ergue chat+embed no BOOT; operações de GPU |
-| sandbox | container `ragchat-sandbox` | rede interna | teste de código do chat |
+| Qdrant | VPS: container `ragaroy-qdrant` · dev: instância do rag-llama | :6333 | compartilhado — fork não sobe o seu |
+| llama-server chat | container `ragchat-llm` (estação, GPU) | :8090 → llm.disroy.org | 2 slots: `-c 32768 -np 2 -fa on -ctk/-ctv q8_0`; dev: bin nativo |
+| llama-server embedding (bge-m3) | container `ragchat-embed` (estação, GPU) | :8081 → embed.disroy.org | **SEMPRE ligado** — nada pode derrubá-lo |
+| agente do host | `python -X utf8 -m api.agente_host` | :8010 | SÓ dev — produção é container (sem host) |
+| sandbox | container `ragchat-sandbox` | rede interna | VPS: imagem `rag-llama-sandbox:latest` reaproveitada |
 
 GGUFs dos modelos ficam em `D:\models` (presets em `core/config.py`:
 `MODELOS`/`EMBEDDINGS`). O fork serve SÓ chat (:8090) e embedding
@@ -77,10 +88,13 @@ aparecer como opção de conversa.
 
 ### VRAM (8 GB)
 
-Um modelo de conversa por vez + o embedding. `servicos_llm.py` já
-reinicia tudo ao trocar de modelo; a troca pela webui (`modelos.ativar`)
-espera `VRAM_ASSENTAMENTO_S` (constante em `core/config.py`) pela VRAM
-liberar antes de subir o novo.
+Um modelo de conversa por vez + o embedding. Na produção (containers
+`ragchat-llm`), trocar de modelo = editar o GGUF no compose da estação e
+recriar o serviço (`docker compose ... up -d --force-recreate llm`) +
+ajustar `LLM_MODEL` no `.env` da VPS. Em dev, `servicos_llm.py` ainda
+faz a gestão pelo menu; a troca pela webui (`modelos.ativar`) espera
+`VRAM_ASSENTAMENTO_S` (constante em `core/config.py`) pela VRAM liberar
+antes de subir o novo.
 
 ### Cookies e portas (isolamento do ORIG)
 
@@ -126,6 +140,22 @@ python -X utf8 -m core.reembed [colecao ...]   # sem args: todas
 # no BOOT e atende as operações de GPU da API-container (:8010)
 python -X utf8 -m api.agente_host
 ```
+
+```bash
+# ── PRODUÇÃO (VPS, via SSH — nada roda no terminal da estação) ──
+ssh -p 2222 rodney@152.67.53.90
+cd ~/apps/rag-chat
+GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_ragchat -o IdentitiesOnly=yes" git pull --ff-only
+docker compose -p rag-chat -f docker-compose.yml \
+  -f ~/infra/services/rag-chat/docker-compose.prod.yml up -d --build
+
+# llama na estação (containers GPU)
+cd ~/infra && docker compose -p ragchat-llm --env-file .env \
+  -f services/ragchat-llm/docker-compose.yml up -d   # ⚠️ --env-file OBRIGATÓRIO
+```
+
+Mapa operacional completo (topologia, túneis, armadilhas): `deploy/README.md`
+(fora do git — vive só na estação).
 
 ## 3. Arquitetura — 2 subsistemas
 
@@ -270,9 +300,11 @@ spec exige restart da API**.
   point escolhido automaticamente (`escolher_principal`); app web ganha
   link temporário (~30 min, HMAC). Nome do arquivo usa a DICA da prosa
   (`_nomesCitados`) — nunca diverge do sugerido no chat.
-- **Deploy VPS é SEMPRE pelo CI** (quando o fork ganhar repo próprio):
-  `docker compose up` MANUAL sem o override da infra derruba o Traefik
-  → 502. O 502 do Cloudflare por ~20 s durante deploy = janela normal.
+- **Deploy VPS é SEMPRE git pull + compose com o override da infra**
+  (`docker-compose.prod.yml` — sem ele o compose base publica portas e
+  fura o Traefik). Deploy key da VPS é READ-ONLY (`vps-read`): pull sim,
+  push não — push sai da estação. O 502 do Cloudflare por ~20 s durante
+  rebuild = janela normal.
 
 ## 6. Estado e decisões históricas
 
