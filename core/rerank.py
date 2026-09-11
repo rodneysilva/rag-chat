@@ -120,9 +120,9 @@ def rerank(pergunta: str, achados: list, top_n: int = 4,
         return None
     topo = float(max(notas))
     if topo < SINAL_MIN:
-        log(f"🎛️ rerank inconclusivo (top {topo:.3f} < {SINAL_MIN} — notas "
-            "sem sinal: query e base em idiomas diferentes?) — mantida a "
-            "ordem da busca vetorial", "busca")
+        log(f"🎛️ rerank inconclusivo (top {topo:.3f} < {SINAL_MIN} — nada "
+            "pontuou como relevante: assunto fora da base? idiomas "
+            "diferentes?) — mantida a ordem da busca vetorial", "busca")
         return None
     ordenados = [a for a, _ in
                  sorted(zip(achados, notas), key=lambda t: t[1],
