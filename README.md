@@ -221,6 +221,10 @@ curl -b jar http://localhost:8001/api/query/status/<job>   # logs + resposta
 
 ## Arquitetura
 
+<a href="static/arquitetura.svg">
+  <img src="static/arquitetura.svg" width="880" alt="Arquitetura do RagChat em camadas: usuário → webui HTMX → API FastAPI (composição + routers, executor async de jobs) → Qdrant/Sandbox, com estação GPU à direita (containers llama.cpp chat :8090 e embed bge-m3 :8081, endpoint OpenAI-compatible com API key via túnel)"/>
+</a>
+
 ```
 ┌─ estação com GPU (opcional) ─────────────┐   ┌─ host / servidor (docker compose) ───┐
 │ llama-server  chat :8090 · embed :8081   │⇄⇄│ api :8000 (int)  FastAPI + webui HTMX │
