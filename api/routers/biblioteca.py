@@ -125,7 +125,13 @@ def hx_job(kind: str, job: str, request: Request, r: int = 0):
            "eta_s": s.get("eta_s"),
            "r": r,
            "segundos": (res.get("segundos") if isinstance(res, dict) else None),
-           "preview_pid": (res.get("preview") if isinstance(res, dict) else None)}
+           "preview_pid": (res.get("preview") if isinstance(res, dict) else None),
+           # job CONCLUÍDO (sem link de revisão) ganha o caminho de volta —
+           # sem isso o card terminava e a página ficava sem saída óbvia
+           "rodape_link": (None if (s["running"] or s.get("error")
+                                    or (isinstance(res, dict) and res.get("preview")))
+                           else {"href": "/biblioteca",
+                                 "texto": "← voltar para a Biblioteca"})}
     return TEMPLATES.TemplateResponse(request, "_job.html", ctx)
 
 
@@ -452,17 +458,27 @@ def hx_colecao_apagar(nome: str, request: Request):
 
 
 @router.post("/hx/revisao/descartar")
-def hx_revisao_descartar(body: dict, request: Request):
-    """✕ REJEITAR aquisição: apaga o preview — NADA vai para o Qdrant."""
+def hx_revisao_descartar(request: Request, pid: str = Form("")):
+    """✕ REJEITAR aquisição: apaga o preview — NADA vai para o Qdrant.
+    Form (não JSON): o botão chama com hx-vals, que posta form-encoded —
+    a assinatura antiga (`body: dict`) dava 422 engolido pelo hx-swap=none
+    + onclick (navegava e o descarte NUNCA acontecia de verdade)."""
     _usuario(request)
-    pid = (body or {}).get("pid", "")
     if re.fullmatch(r"[A-Za-z0-9]{1,16}", pid):
         try:
             from core import preview as _pv
             _pv._previews.pop(pid, None)
         except Exception:
             pass
-    return {"descartado": True}
+    return TEMPLATES.TemplateResponse(
+        request, "_job.html",
+        {"request": request, "kind": "ingest", "job": f"desc-{pid}"[:40],
+         "rotulo": "rejeitar aquisição",
+         "linhas": [{"ts": "", "msg": f"✕ preview {pid} apagado"},
+                    {"ts": "", "msg": "nada foi indexado no Qdrant"}],
+         "running": False, "resumo_texto": "nada foi indexado",
+         "rodape_link": {"href": "/biblioteca",
+                         "texto": "← voltar para a Biblioteca"}})
 
 
 @router.post("/hx/revisao/aplicar")

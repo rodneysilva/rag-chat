@@ -70,9 +70,16 @@ def _token() -> str:
 
 
 # ─────────────────────────── docker (subprocess) ────────────────────────
+# o agente roda sob pythonw (sem console): todo docker.exe spawned aqui
+# ganharia uma janela de console NOVA que pisca na tela do dono —
+# CREATE_NO_WINDOW (0x08000000) esconde (pedido: "por que está abrindo
+# uma janela sempre? precisa ficar em background")
+_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+
 def _docker(*args: str, timeout: float = 60) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", *args], capture_output=True, text=True,
-                          timeout=timeout)
+                          timeout=timeout, creationflags=_NO_WINDOW)
 
 
 def _estado(container: str) -> str | None:

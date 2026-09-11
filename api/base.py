@@ -1528,7 +1528,11 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     # setado acima) não toca a GPU da estação. Falha aqui = estação
     # inalcançável: o job morre com o motivo claro em vez de erro de conexão
     # críptico lá na geração.
-    if rag.usa_llm_local():
+    # ⚡ MODO RAG PURO (pedido do dono 11/09: "só deve ligar a gpu se for
+    # usar a gpu, quando seleciono só a base, não precisa consultar a llm"):
+    # nada neste fluxo acorda o container do chat — a resposta é o digest
+    # dos fragmentos (embedding + Qdrant + rerank apenas).
+    if rag.usa_llm_local() and body.mode != "rag":
         modelos.garantir_llm(log=log)
     # 🌐 WEB POR INTENÇÃO: o pedido de busca na MENSAGEM ativa o mesmo
     # motor do MCP "pesquisa-web" (DuckDuckGo → Serper, páginas inteiras
@@ -1577,7 +1581,15 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     # roteia a pergunta ANTES de cache/Qdrant/rerank — pedido de CRIAÇÃO
     # em modo rag é orientado na hora (antes: pagava ~7 s de busca para
     # no fim recusar), saudação responde direto. "fluxo" não toca em nada.
-    if not colecoes:
+    # ⚡ RAG PURO pula o roteador (é LLM — e a escalada automática para
+    # híbrido também acordaria a GPU): criação em modo rag recebe a recusa
+    # ORIENTADA do fim do fluxo, como sempre recebeu
+    if body.mode == "rag":
+        _rota = {"rota": "fluxo", "tipo": "",
+                 "motivo": "modo rag (LLM não consultada)"}
+        log("🧭 roteador PULADO (modo rag — só a base, LLM de conversa "
+            "não consultada)", "mensagem")
+    elif not colecoes:
         # ⚡ SEM coleções = SEM roteador (pedido do dono 28/08: com provedor
         # externo a classificação pagava ~4 s de ida-e-volta à API antes da
         # resposta; sem base nada a rotear — a saudação trivial segue pelo
@@ -1678,7 +1690,9 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     # execução já aponta a LLM para o endpoint externo (o valor com ":"
     # nunca é alias do REGISTRO; sem isto a estação ficava "carregando"
     # um modelo que não existe)
-    if body.model and ":" in str(body.model):
+    if body.mode == "rag":
+        pass  # rag puro: nenhum modelo é consultado — nada de troca/ativação
+    elif body.model and ":" in str(body.model):
         pass
     elif body.model and modelos.normalizar(body.model) != modelos.normalizar(_servido_agora):
         log(f"🔁 trocando modelo para {body.model} (libera VRAM, ~1 min)…", "modelo")
@@ -1765,12 +1779,14 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
         try:
             t_busca0 = time.time()  # 🗄️ métrica do QDRANT no rodapé
             client = QdrantClient(url=config.QDRANT_URL, timeout=30)
-            if body.history:
+            if body.history and body.mode != "rag":
                 log("🔎 reformulando a pergunta com o histórico…", "busca")
                 contadores.set_etapa("reformulação")
             else:
                 log("🔎 consultando a base…", "busca")
-            pergunta_busca = rag.reformula(body.question, body.history)
+            # rag puro: a reformulação é LLM — a pergunta original busca direto
+            pergunta_busca = (rag.reformula(body.question, body.history)
+                              if body.mode != "rag" else body.question)
             contadores.set_etapa(None)
             if pergunta_busca != body.question:
                 print(f"🔎 Busca reformulada: {pergunta_busca}")
@@ -1816,7 +1832,7 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             # traduz a pergunta e REBUSCA; só roda sem histórico (com
             # histórico a reformulação já cumpre o papel) e 1x.
             if (not achados and not body.history and escopo
-                    and body.mode in ("rag", "hibrido")):
+                    and body.mode == "hibrido"):
                 try:
                     from core import idioma as _idioma
                     pergunta_en = _idioma.para_busca_inglesa(
@@ -1956,7 +1972,7 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                         # rebuscar (conhecimento real que caiu na zona fraca
                         # por idioma; criação/mistura de assuntos não salva —
                         # a recusa orientada cuida desses)
-                        if not body.history and body.mode in ("rag", "hibrido"):
+                        if not body.history and body.mode == "hibrido":
                             try:
                                 from core import idioma as _idioma2
                                 _en = _idioma2.para_busca_inglesa(
@@ -2090,23 +2106,25 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
         pass
     # 📦 TRANSPARÊNCIA DO PROMPT (pedido: "sem ruídos — specs, digitado,
     # cache e rag"): o que EXATAMENTE vai para o modelo, em tokens
-    # estimados — dá para ver de onde vem o tamanho antes de gerar
-    try:
-        from core.specs import spec as _spec_txt
-        _partes = []
-        _nome_spec = "chat" if body.mode == "rag" else (
-            "hibrido" if body.mode == "hibrido" else "")
-        if _nome_spec:
-            _partes.append(f"spec ~{len(_spec_txt(_nome_spec)) // 4}")
-        if docs:
-            _partes.append(f"rag ~{len(rag.format_docs(docs)) // 4} ({len(docs)} frag.)")
-        if body.history:
-            _hc = sum(len(str(m.get('content') or '')) for m in body.history)
-            _partes.append(f"histórico ~{_hc // 4} ({len(body.history)} msg)")
-        _partes.append(f"pergunta ~{len(body.question) // 4}")
-        log("📦 prompt: " + " · ".join(_partes) + " tokens (estimativa)", "geração")
-    except Exception:
-        pass
+    # estimados — dá para ver de onde vem o tamanho antes de gerar.
+    # (rag puro não tem prompt — não há o que estimar)
+    if body.mode != "rag":
+        try:
+            from core.specs import spec as _spec_txt
+            _partes = []
+            _nome_spec = "chat" if body.mode == "rag" else (
+                "hibrido" if body.mode == "hibrido" else "")
+            if _nome_spec:
+                _partes.append(f"spec ~{len(_spec_txt(_nome_spec)) // 4}")
+            if docs:
+                _partes.append(f"rag ~{len(rag.format_docs(docs)) // 4} ({len(docs)} frag.)")
+            if body.history:
+                _hc = sum(len(str(m.get('content') or '')) for m in body.history)
+                _partes.append(f"histórico ~{_hc // 4} ({len(body.history)} msg)")
+            _partes.append(f"pergunta ~{len(body.question) // 4}")
+            log("📦 prompt: " + " · ".join(_partes) + " tokens (estimativa)", "geração")
+        except Exception:
+            pass
     # 🔎 busca web marcada = o usuário quer síntese com o motor de busca;
     # a resposta-direta-da-base (score alto) ficaria pela metade
     if resposta_direta is not None and MCP_WEB in (body.mcps or []):
@@ -2140,10 +2158,14 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                                    on_token=on_token)
         contadores.set_etapa(None)
     else:
-        log(f"✍️ gerando resposta só com a base ({len(docs)} fragmento(s))…", "geração")
+        # ⚡ RAG PURO (pedido do dono 11/09): a resposta é o DIGEST dos
+        # fragmentos — a LLM de conversa NÃO é consultada (o container do
+        # chat nem acorda na estação; só embedding + Qdrant + rerank rodaram)
+        log(f"✍️ montando a resposta dos {len(docs)} fragmento(s) — modo rag "
+            "PURO: LLM de conversa não consultada", "geração")
         if found:
             contadores.set_etapa("resposta (rag)")
-            answer = rag.answer(body.question, docs, body.history, bases, on_token=on_token)
+            answer = rag.digest_rag(docs)
             contadores.set_etapa(None)
         else:
             # spec restritiva (F2-8): SEM contexto não há o que responder —

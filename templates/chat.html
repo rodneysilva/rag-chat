@@ -59,7 +59,16 @@
         </div>
         {# ══ CONTROLES ══ #}
         <div class="controles-linha">
-          {# 1º: MODELO — conversa (local + 🌐 provedores por categoria) #}
+          {# 1º: MODO — como usar a base (pedido do dono 11/09: escolher o
+             tipo ANTES; em "rag (só a base)" a LLM de conversa nem é
+             consultada, então o modelo fica OCULTO — nada sobrando) #}
+          <select name="mode" id="sel-modo" title="modo de resposta (como a base entra)" onchange="modoMudou(this)">
+            <option value="hibrido">híbrido</option>
+            <option value="rag">rag (só a base)</option>
+            <option value="livre">livre</option>
+            <option value="auto">auto</option>
+          </select>
+          {# 2º: MODELO — conversa (local + 🌐 provedores por categoria) #}
           <select name="model" id="sel-modelo" title="modelo de conversa" onchange="modeloMudou(this)">
             {% for g in modelos_chat_grupos %}
             {% if g.modelos %}
@@ -70,13 +79,6 @@
             </optgroup>
             {% endif %}
             {% endfor %}
-          </select>
-          {# 2º: MODO — como usar a base #}
-          <select name="mode" id="sel-modo" title="modo de resposta (como a base entra)">
-            <option value="hibrido">híbrido</option>
-            <option value="rag">rag (só a base)</option>
-            <option value="livre">livre</option>
-            <option value="auto">auto</option>
           </select>
           <button type="button" onclick="melhorarPrompt(this)" id="btn-prompt"
                   title="a ✨ reescreve o que você digitou na melhor forma — pergunta, pedido de código, instrução">✨ prompt</button>
@@ -441,6 +443,19 @@ async function modeloMudou(sel) {
 }
 atualizarModeloAtivo();
 
+/* MODO governa o MODELO: "rag (só a base)" responde só com o que vier do
+   Qdrant (embedding) — a LLM de conversa não é consultada nem ligada, então
+   o select de modelo SOME (pedido do dono 11/09: "se eu selecionar só a
+   rag, nem precisa mostrar os modelos, pois eles não serão utilizados"). */
+function modoMudou(sel) {
+  const m = document.getElementById("sel-modelo");
+  if (!m) return;
+  const semLlm = sel.value === "rag";
+  m.style.display = semLlm ? "none" : "";
+  m.disabled = semLlm;   // disabled não viaja no form — coerente com o fim
+}
+modoMudou(document.getElementById("sel-modo"));
+
 /* ═══════════ 1d. RACIOCÍNIO: o estado abrir/recolher vive no base.html
    (mecanismo único por CHAVE estável — id do card + summary) — abrir
    durante a geração de logs PERMANECE aberto em qualquer re-render do
@@ -468,6 +483,7 @@ function _copiar(btn, texto) {
     if (marcadas > 0 && selMode.value === "livre") {
       selMode.value = "hibrido";
       selMode.title = "coleção marcada entra no contexto (modo híbrido)";
+      modoMudou(selMode);   // saiu do rag/livre → o select de modelo volta
     }
   });
 })();

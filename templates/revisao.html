@@ -27,7 +27,7 @@ function removerDoc(b){ const item = b.closest(".doc-item");
   </p>
 </section>
 
-<form hx-post="/hx/revisao/aplicar" hx-target="#executando-revisao" hx-swap="afterbegin">
+<form id="form-revisao" hx-post="/hx/revisao/aplicar" hx-target="#executando-revisao" hx-swap="afterbegin">
   <section class="cartao">
     {# MAIS PRECISOS NO TOPO (o servidor ordena: aderência desc, problemas
        no fim); o selo de grupo muda quando começam os que exigem atenção #}
@@ -74,12 +74,54 @@ function removerDoc(b){ const item = b.closest(".doc-item");
         <input type="text" name="colecao" value="{{ resp.colecao_alvo or '' }}" placeholder="ex.: culinaria"></div>
       <input type="hidden" name="preview" value="{{ pid }}">
       <div class="estreito"><label>&nbsp;</label>
-        <button class="primario" type="submit">✓ aplicar marcados no Qdrant</button>
+        <button id="btn-aplicar" class="primario" type="submit">✓ aplicar marcados no Qdrant</button>
       </div>
       <div class="estreito"><label>&nbsp;</label>
-      <button type="button" class="perigo" hx-post="/hx/revisao/descartar" hx-vals='{"pid": "{{ pid }}"}' hx-confirm="descartar TUDO desta aquisição? Nada será indexado." hx-swap="none" onclick='location.href="/biblioteca"'>✕ rejeitar tudo</button></div>
+      <button id="btn-descartar" type="button" class="perigo" hx-post="/hx/revisao/descartar" hx-vals='{"pid": "{{ pid }}"}' hx-confirm="descartar TUDO desta aquisição? Nada será indexado." hx-target="#executando-revisao" hx-swap="afterbegin">✕ rejeitar tudo</button></div>
     </div>
   </section>
 </form>
 <div id="executando-revisao"></div>
+<script>
+(function(){
+  // FEEDBACK dos botões da revisão (pedido do dono 11/09: "não tem retorno
+  // nos botões… não sei o que está acontecendo"): o clique trava os dois e
+  // troca o rótulo; quando o card do JOB entra, o formulário some e a
+  // página rola até o card — o log em andamento é o "para onde ir".
+  const form  = document.getElementById('form-revisao');
+  const bApl  = document.getElementById('btn-aplicar');
+  const bDesc = document.getElementById('btn-descartar');
+  const alvo  = document.getElementById('executando-revisao');
+  const rotuloApl = bApl.textContent, rotuloDesc = bDesc.textContent;
+  form.addEventListener('htmx:beforeRequest', function(){
+    bApl.disabled = bDesc.disabled = true;
+    bApl.textContent  = '⏳ aplicando…';
+    bDesc.textContent = '⏳ rejeitando…';
+  });
+  // erro (4xx/5xx): reacende os botões e MOSTRA o que deu errado em vez
+  // de engolir silenciosamente (o bug original do descartar era um 422
+  // invisível atrás do hx-swap="none")
+  form.addEventListener('htmx:beforeSwap', function(ev){
+    if (ev.detail.xhr && ev.detail.xhr.status >= 400) {
+      ev.detail.shouldSwap = true;
+      ev.detail.serverResponse =
+        '<div class="cartao" style="padding:.8rem;"><span class="erro">✕ falhou</span>' +
+        ' — erro ' + ev.detail.xhr.status + '. Nada foi gravado; tente de novo.</div>';
+    }
+  });
+  form.addEventListener('htmx:afterRequest', function(ev){
+    if (ev.detail.failed) {
+      bApl.disabled = bDesc.disabled = false;
+      bApl.textContent  = rotuloApl;
+      bDesc.textContent = rotuloDesc;
+    }
+  });
+  alvo.addEventListener('htmx:afterSwap', function(){
+    if (form.style.display === 'none') return;   // polling: já trocou uma vez
+    form.style.display = 'none';                 // o card do job assumiu
+    const card = this.firstElementChild;
+    if (card) card.scrollIntoView({behavior: 'smooth', block: 'center'});
+  });
+})();
+</script>
 {% endblock %}

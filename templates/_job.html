@@ -46,5 +46,9 @@
   <div style="margin-top:.6rem;">
     <a class="botao primario" href="/revisao/{{ preview_pid }}">revisar e aprovar {{ resumo_texto }}</a>
   </div>
+  {% elif rodape_link %}
+  <div style="margin-top:.6rem;">
+    <a class="botao" href="{{ rodape_link.href }}">{{ rodape_link.texto }}</a>
+  </div>
   {% endif %}
 </div>

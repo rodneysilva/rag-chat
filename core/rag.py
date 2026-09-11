@@ -509,6 +509,34 @@ def answer(question, docs, history=None, bases=None, on_token=None):
                   on_token)
 
 
+def digest_rag(docs, limite: int = 4) -> str:
+    """Modo rag PURO (pedido do dono 11/09: "quando seleciono só a base, não
+    precisa consultar a llm, somente o embedding"): a resposta É o digest dos
+    fragmentos recuperados — generaliza a resposta-direta (SCORE_DIRETO) para
+    qualquer score, sem NENHUMA chamada à LLM de conversa.
+
+    Os fragmentos já vêm ordenados (rerank rodou antes); a sanitização é a
+    mesma da resposta-direta (HTML cru vira texto, header de chunk sai)."""
+    from . import limpeza as _limpeza
+    partes = []
+    for i, d in enumerate(docs[:limite], 1):
+        txt = (d.page_content or "").strip()
+        if not txt:
+            continue
+        try:
+            if _limpeza.parece_pagina_html(txt):
+                txt = _limpeza.html_para_texto(txt) or txt
+        except Exception:
+            pass  # sanitização falhou = entrega o texto cru (blinda o fluxo)
+        # header "[título contextual]" do chunk é METADADO de indexação — fora
+        txt = re.sub(r"^\s*\[[^\]\n]{1,140}\][ \t]*\r?\n", "", txt, count=1).strip()
+        colecao = d.metadata.get("colecao", "")
+        area = d.metadata.get("area", "")
+        origem = " · ".join(x for x in (colecao, area) if x)
+        partes.append(f"**[{i}]**{f' ({origem})' if origem else ''}\n\n{txt}")
+    return "\n\n---\n\n".join(partes)
+
+
 def answer_free(question, history=None, on_token=None):
     """Modo livre: gera a resposta com o conhecimento do modelo, sem busca no Qdrant."""
     chain = (ChatPromptTemplate.from_messages([
