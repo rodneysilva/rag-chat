@@ -105,10 +105,30 @@ def test_rag_puro_frago_nao_zera_a_base(cenario, monkeypatch):
               (_doc("Outro fragmento medíocre."), 0.48, "c")]
     monkeypatch.setattr(rag, "search", lambda *a, **kw: (fracos, {}))
     monkeypatch.setattr(base.rerank, "rerank", lambda *a, **kw: None)
+    # rerank indisponível NÃO é "sem sinal" — notas None = não olhou
+    monkeypatch.setattr(base.rerank, "notas_de", lambda *a, **kw: None)
     r = _processar_query(QueryIn(question="o que é o vatapá?", mode="rag",
                                  collections=["c"]))
     assert len(r["docs"]) == 2            # nada descartado: a base responde
     assert "culinária" in r["answer"]
+    assert "Nada na base responde" not in r["answer"]  # sem aviso indevido
+
+
+def test_rag_puro_sem_sinal_avisa_em_vez_de_responder_outro_assunto(
+        cenario, monkeypatch):
+    """Caso real do dono 12/09 ("receita de frango" → churrasco/picanha):
+    o reranker bilíngue OLHOU os fragmentos e nenhum é relevante → a
+    resposta AVISA que a base não cobre a pergunta (o material segue
+    visível, como referência — não como resposta)."""
+    base, rag = cenario
+    monkeypatch.setattr(base.rerank, "rerank", lambda *a, **kw: None)
+    monkeypatch.setattr(base.rerank, "notas_de",
+                        lambda *a, **kw: [0.020, 0.023])
+    r = _processar_query(QueryIn(question="receita de frango", mode="rag",
+                                 collections=["c"]))
+    assert r["answer"].startswith("⚠️")   # aviso na frente…
+    assert "Nada na base responde" in r["answer"]
+    assert "vatapá" in r["answer"]        # …material segue como referência
 
 
 def test_digest_rag_sanitiza_recorta_e_numera():

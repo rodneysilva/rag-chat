@@ -1764,6 +1764,7 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     # na retomada de aprovação o contexto já vem no estado do agente
     found, docs, erros, bases = [], [], {}, None
     resposta_direta = None  # texto que responde por si (score alto; já sanitizado)
+    sem_sinal_topo = None   # rag puro: reranker OLHOU e nada é relevante (topo)
     pergunta_busca = body.question  # reformulada na busca (quando há histórico)
     # 🗄️ métrica da busca p/ o rodapé (None = não houve busca: cache/sem coleções)
     busca_stats = None
@@ -1882,6 +1883,23 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                     log(f"🎛️ rerank {len(achados)}→{len(ordenados)} "
                         f"(top {topo:.3f})", "busca")
                     achados = ordenados
+                elif body.mode == "rag":
+                    # ⚠️ RESPOSTA HONESTA no rag puro (pedido do dono 12/09:
+                    # "fiz uma pergunta e ele me deu outra resposta"): rerank
+                    # devolve None também quando INDISPONÍVEL — as notas
+                    # distinguem (cache hit: os pares acabaram de ser
+                    # pontuados). Topo sem sinal = NADA na base responde à
+                    # pergunta → o digest AVISA em vez de entregar o mais
+                    # próximo como se fosse a resposta certa.
+                    _notas = rerank.notas_de(
+                        pergunta_busca,
+                        [d.page_content for d, _, _ in achados[:8]])
+                    if _notas is not None and max(_notas) < rerank.SINAL_MIN:
+                        sem_sinal_topo = float(max(_notas))
+                        log("🚫 rerank SEM SINAL para esta pergunta — a base "
+                            "não tem material relevante; a resposta vai "
+                            "AVISAR em vez de apresentar o mais próximo "
+                            "como se fosse o pedido", "busca")
             # 🎯 SCORE COMO GUARDRAIL (pedido do dono): o score do melhor
             # fragmento diz o que fazer com ele —
             #   ≥ SCORE_DIRETO: a base RESPONDE por si → resposta direta do
@@ -2183,6 +2201,18 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             contadores.set_etapa("resposta (rag)")
             answer = rag.digest_rag(body.question, docs)
             contadores.set_etapa(None)
+            if sem_sinal_topo is not None:
+                # o reranker (bilíngue) leu a pergunta × cada fragmento e
+                # nenhum pontuou como relevante — mostrar o resto como
+                # "resposta" era entregar OUTRO assunto (caso real:
+                # "receita de frango" → churrasco/picanha)
+                answer = (
+                    "⚠️ **Nada na base responde a esta pergunta** — o "
+                    "reranker analisou os fragmentos recuperados e nenhum "
+                    "tem relação real com o pedido (a base não parece "
+                    "conter este assunto).\n\nO material abaixo é apenas o "
+                    "mais próximo que a busca encontrou, por referência:"
+                    "\n\n" + answer)
         else:
             # spec restritiva (F2-8): SEM contexto não há o que responder —
             # a frase exata, sem gastar chamada de LLM.
