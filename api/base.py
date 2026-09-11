@@ -1957,6 +1957,18 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                             limpo = re.sub(r"^\s*\[[^\]\n]{1,260}\][ \t]*\r?\n",
                                            "", conteudo, count=1)
                             resposta_direta = (limpo.strip() or conteudo).strip()
+                        # ⛳ PEDIDO DE CÓDIGO na resposta direta (mesma
+                        # regra 3 da spec rag_puro.md — validado ao vivo:
+                        # "hello world em python" top 0.673 devolvia a prosa
+                        # INTEIRA do fragmento): o bloco cercado É a resposta
+                        if resposta_direta:
+                            _blocos = rag.bloco_de_codigo(
+                                body.question, resposta_direta)
+                            if _blocos:
+                                resposta_direta = _blocos
+                                log("⛳ pedido de código — a resposta direta "
+                                    "é o BLOCO extraído da base (verbatim)",
+                                    "geração")
                     except Exception as e:
                         log(f"⚠️ sanitização do fragmento falhou "
                             f"({str(e)[:80]}) — seguindo para o modelo",

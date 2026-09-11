@@ -529,6 +529,17 @@ _RE_PEDIDO_CODIGO = re.compile(
     r"como\s+(?:escrever|implementar|programar)\b|"
     r"\bfun[çc][ãa]o\s+(?:que\s+)?(?:fa[çc]a|retorne)", re.I)
 _RE_BLOCO_CERCADO = re.compile(r"```[\w+\-#.]*(?:[ \t]*\r?\n).*?```", re.S)
+
+
+def bloco_de_codigo(pergunta: str, texto: str, max_blocos: int = 2) -> str | None:
+    """Pedido de código + bloco cercado no texto → o(s) bloco(s) INTEIROS e
+    VERBATIM (regra 3 da spec rag_puro.md) — compartilhado entre o digest
+    rag e a resposta direta. None quando não é pedido de código ou o texto
+    não tem bloco (a prosa responde como sempre)."""
+    if not _RE_PEDIDO_CODIGO.search(pergunta or ""):
+        return None
+    blocos = _RE_BLOCO_CERCADO.findall(texto or "")
+    return "\n\n".join(blocos[:max_blocos]) if blocos else None
 _STOP_DIGEST = frozenset(
     "a o as os um uma uns umas de do da das dos e em no na nos nas por para "
     "com que qual quais quanto quando onde como quem cuja ao aos à às é foi "
@@ -655,12 +666,9 @@ def digest_rag(question, docs, limite: int = 4) -> str:
         # do fragmento entra INTEIRO e VERBATIM — a base RESPONDE com o que
         # tem (extração), sem gerar nada; arquivo de código PURO (sem cerca
         # no texto) vira bloco cercado da linguagem do arquivo
-        trecho = None
-        if _RE_PEDIDO_CODIGO.search(question or ""):
-            blocos = _RE_BLOCO_CERCADO.findall(txt)
-            if blocos:
-                trecho = "\n\n".join(blocos[:2])
-            elif d.metadata.get("camada") == "codigo":
+        trecho = bloco_de_codigo(question, txt)
+        if trecho is None and _RE_PEDIDO_CODIGO.search(question or ""):
+            if d.metadata.get("camada") == "codigo":
                 _nome = str(d.metadata.get("arquivo")
                             or d.metadata.get("source") or "")
                 _ext = _nome.rpartition(".")[2].lower()

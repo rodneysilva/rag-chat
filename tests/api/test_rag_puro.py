@@ -193,6 +193,23 @@ def test_digest_nao_traduz_titulo_portugues_sem_evidencia_de_ingles(
     assert chamadas == []                     # nada foi enviado ao modelo
 
 
+def test_resposta_direta_de_pedido_de_codigo_e_o_bloco(cenario, monkeypatch):
+    """Regra 3 da spec rag_puro.md na RESPOSTA DIRETA (visto ao vivo
+    12/09: "hello world em python" com top 0.673 ≥ SCORE_DIRETO devolvia a
+    prosa INTEIRA do fragmento) — pedido de código devolve o BLOCO verbatim."""
+    base, rag = cenario
+    monkeypatch.setattr(base.config, "SCORE_DIRETO", 0.5)
+    doc = _doc("Guia rápido de Python para começar. O primeiro programa "
+               "é o hello world.\n\n```python\nprint(\"hello world\")\n```")
+    monkeypatch.setattr(rag, "search",
+                        lambda *a, **kw: ([(doc, 0.67, "c")], {}))
+    r = _processar_query(QueryIn(question="hello world em python",
+                                 mode="rag", collections=["c"]))
+    assert 'print("hello world")' in r["answer"]
+    assert "```python" in r["answer"]
+    assert "Guia rápido" not in r["answer"]   # só o bloco, sem a prosa
+
+
 def test_digest_pedido_de_codigo_extrai_bloco_da_base(monkeypatch):
     """Pedido do dono 12/09 ("hello world em qualquer linguagem com base no
     que tenho no qdrant, sem recorrer a llm"): a pergunta pede código e o
