@@ -610,7 +610,10 @@ def digest_rag(question, docs, limite: int = 4) -> str:
         txt = re.sub(r"[ \t]{2,}", " ", txt)
         txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
         trecho = _digest_trecho(txt, termos, pergunta_pt)
-        titulo = (d.metadata.get("titulo") or "").strip()
+        # títulos vindos de SLUG de URL ("Cuisine_of_Par%C3%A1") ficam
+        # ilegíveis — decodifica para exibição
+        from urllib.parse import unquote as _unquote
+        titulo = _unquote((d.metadata.get("titulo") or "").strip())
         colecao = d.metadata.get("colecao", "")
         area = d.metadata.get("area", "")
         origem = " · ".join(x for x in (colecao, area) if x)
