@@ -1,12 +1,12 @@
-﻿# Contribuindo com o RagAroy
+# Contribuindo com o RagChat
 
 ## Rodar o projeto localmente
 
 Ver `README.md` (início rápido). Resumo:
 
 ```powershell
-.\setup.ps1          # stack completa (api + qdrant + rabbit + redis + sandbox)
-python servicos_llm.py   # LLM + embedding no host com GPU (opcional p/ endpoint remoto)
+.\setup.ps1          # api (:8001) + sandbox — Qdrant é instância externa (:6333)
+python servicos_llm.py   # LLM + embedding no host com GPU (via llama-server)
 ```
 
 Mudou código da API? `docker compose up -d --build api` (nunca uvicorn direto em
@@ -19,16 +19,20 @@ operação — o stack espera o container).
 envelope (dados + `ETAPA: x`). Nada de prompt hardcoded. Coleções são sempre
 genéricas (nenhum texto do sistema cita coleções específicas).
 
-- Mudar COMPORTAMENTO → editar a spec (índice em `docs/README.md`).
+- Mudar COMPORTAMENTO → editar a spec (ver **"Comportamento vive em specs"**
+  na seção *Arquitetura* do `README.md`).
 - Specs são `lru_cache` — editar exige restart da API ou `POST /api/specs/reload`.
 - Documentação em 3 camadas: README (usar) · AGENTS.md (modificar — memória
-  operacional) · docs/ (análises). Conflito? **código > AGENTS.md > README >
-  docs** — corrija o documento errado na mesma mudança.
+  operacional) · docs/ (análises; local, fora do versionado). Conflito?
+  **código > AGENTS.md > README > docs** — corrija o documento errado na
+  mesma mudança.
 
 ## Ciclo de commit e deploy
 
-`main` publica automaticamente (GitHub Actions → servidor). Prefira branch +
-PR para mudanças grandes. Roda antes de commitar:
+O CI **só valida** (sintaxe + scripts genéricos em Linux/Windows/macOS) —
+não há deploy automático por push. Deploy é **docker compose**, documentado
+no `AGENTS.md` (VPS: git pull + compose com override da infra). Prefira
+branch + PR para mudanças grandes. Roda antes de commitar:
 
 ```powershell
 python -m py_compile api/app.py core/<o-que-mudou>.py   # sintaxe
@@ -39,8 +43,9 @@ E use o E2E da área tocada (algo de `tests_manual/`) após o deploy.
 ## Higiene (repo público)
 
 - **NUNCA** commitar: `.env`, `users.json`, `sessions/`, `saidas/`, `logs/`,
-  `datasets/`, `qdrant_data/`, `rabbit_data/`, `hf_cache/`, `modelos_voz/` —
-  todos no `.gitignore`; se criar um arquivo de estado novo, ignore-o também.
+  `datasets/`, `qdrant_data/`, `hf_cache/`, `deploy/`, `docs/`, `scripts/`,
+  `tests_manual/`, `Temp/`, `AGENTS-historico.md` — todos no `.gitignore`;
+  se criar um arquivo de estado novo, ignore-o também.
 - Credenciais/endpoints reais vivem no `.env` — no código, só defaults de DEV
   claramente marcados (ver `docker-compose.yml`).
 - Nunca nomear uma rota FastAPI com o nome de um módulo importado (sombreamento
@@ -50,7 +55,7 @@ E use o E2E da área tocada (algo de `tests_manual/`) após o deploy.
 
 ## Testes
 
-- `tests_manual/` guarda os E2E por área (login, chat, ingestão, revisão, mídia,
+- `tests_manual/` guarda os E2E por área (login, chat, ingestão, revisão,
   sandbox, telemetria…) — rodam contra a instância publicada ou local
-  (`python -X utf8 tests_manual/e2e_final.py <base-url>`).
+  (roda o script da área em `tests_manual/`).
 - Credenciais de teste vêm do `.env` (nunca hardcoded).

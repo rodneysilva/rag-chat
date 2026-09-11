@@ -7,6 +7,10 @@ __pycache__/
 # artefatos de deploy local (compose/segredos/estado por máquina — nada disso no git)
 deploy/
 
+# documentação interna e scripts de máquina (decisão do dono — fora do versionado)
+docs/
+scripts/
+
 # front
 node_modules/
 

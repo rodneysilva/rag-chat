@@ -15,14 +15,12 @@ itens ACUMULAM por conversa.
 | Aba | O que entra | Quando |
 |---|---|---|
 | 📄 arquivos | cada bloco de código/comando da resposta, como `arquivoN.linguagem`, com botão copiar | resposta CONCLUÍDA (streaming ao vivo não conta — o parcial re-renderiza) |
-| 🎬 mídia | imagem/vídeo/GIF gerado (job concluído), com player/animação | job de geração conclui; dedupe por URL |
 | 📚 fontes | docs citados (📚 do rodapé) e a resposta completa (▦) | ao clicar no rodapé/botão da mensagem |
 
-- contadores `(N)` por aba; mídia nova CHEGA com a aba mídia visível; o
+- contadores `(N)` por aba; o
   clique em fontes/resposta TROCA para a aba 📚 (a filtragem é uma ÚNICA
   função `_irParaAba` — nunca fica inconsistente).
-- trocar de conversa LIMPA e RECONSTRÓI as abas a partir das mensagens
-  (mídia de sessões passadas não reconstrói — só a da sessão de página).
+- trocar de conversa LIMPA e RECONSTRÓI as abas a partir das mensagens.
 - **⚠️ serialização**: `data-fontes` usa aspas SIMPLES no HTML — o `tojson`
   do Jinja escapa `'` mas NÃO escapa `"`; com aspas duplas o JSON quebrava
   no primeiro `"` e o painel de fontes falhava em silêncio.
@@ -36,23 +34,6 @@ Cada fonte exibe o que a recuperação realmente mediu:
 - **arquivo** de origem (`source`, basename) e **descrição/seção** quando
   existem nos metadados;
 - o **conteúdo** do chunk (o texto que alimentou a resposta).
-
-## Mídia: play e ampliação
-
-- vídeo: player nativo (`controls`); GIF: `<img>` animado.
-- imagem/GIF: clique = **lightbox** (tela cheia, clique fecha).
-
-## Incluir no contexto (📎)
-
-Toda mídia na aba 🎬 tem **📎 incluir no contexto** — SUBTENDIDO: não há
-chip/indicador visível (tudo que está na conversa É contexto); a mídia
-anexada simplesmente acompanha a próxima mensagem (feedback só no botão):
-
-- **vídeo/gif** → geração vira **i2v**: a imagem anexa é o quadro inicial.
-- **texto (pergunta normal)** → o **multimodal (Qwen2.5-VL)** descreve a
-  imagem e a descrição entra na pergunta (`[imagem anexada — conteúdo]: …`);
-  multimodal indisponível NÃO derruba a pergunta (segue sem, com log claro).
-- a referência é consumida no envio (o hidden field limpa sozinho).
 
 ## Nome dos arquivos
 
@@ -84,11 +65,7 @@ O raciocínio do chat narra TUDO o que o core faz, limpo e claro:
 ## Combobox inteligente de modelos
 
 - **texto** → modelos de conversa CATEGORIZADOS em optgroups
-  (👨‍💻 programação · 💬 conversa);
-- **imagem** → só os modelos de geração de imagem (Flux dev/schnell — a
-  escolha vai no `params.modelo` da tarefa; match tolerante alias↔arquivo);
-- **vídeo/gif** → só o Wan2.2 (único motor de vídeo);
-- voltar a "texto" restaura a escolha de conversa anterior.
+  (👨‍💻 programação · 💬 conversa).
 
 ## Download .zip da aba atual
 
@@ -96,6 +73,4 @@ Botão ⬇ no cabeçalho do painel baixa a ABA ATUAL:
 
 - 📄 arquivos → `POST /api/zip` com `{nome, conteudo}` de cada bloco
   (o caminho do rótulo vira pasta no zip);
-- 🎬 mídia → `POST /api/midia/zip` com as refs `pasta\arquivo` (a API
-  resolve em `saidas/`; refs com `\` são normalizadas para `/`);
 - 📚 fontes → `POST /api/zip` com cada fonte como arquivo de texto.

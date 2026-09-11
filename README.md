@@ -10,7 +10,7 @@
 [![CI multi-OS](https://img.shields.io/badge/CI-ubuntu%20%7C%20windows%20%7C%20macos-green.svg)](.github/workflows/ci-cd.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](requirements.txt)
 
-[O que faz](#o-que-faz) · [Começo rápido](#começo-rápido) · [Ambientes](#ambientes-gitflow-develop--main) · [Arquitetura](#arquitetura) · [Documentação](#documentação)
+[O que faz](#o-que-faz) · [Começo rápido](#começo-rápido) · [Specs](#specs--comportamento-em-markdown) · [API](#api) · [Arquitetura](#arquitetura) · [Documentação](#documentação)
 
 </div>
 
@@ -24,11 +24,8 @@ com **citação das fontes**, sem custo por token. Provedores externos
 (GLM, DeepSeek, OpenAI, Claude) operam como complemento pontual quando o
 assunto está fora das coleções e das ferramentas MCP.
 
-> Fork **100% texto** do RagAroy: sem geração/edição de mídia, sem
-> análise de imagem, sem voz — só **chat + RAG (Qdrant) + biblioteca +
-> MCP/pesquisa web + sandbox de código**. O Qdrant é a **instância
-> compartilhada** do rag-llama (`:6333`): as coleções existentes
-> aparecem sozinhas no seletor.
+O projeto é **100% texto**: chat + RAG (Qdrant) + biblioteca +
+MCP/pesquisa web + sandbox de código.
 
 | | local (RagChat) | provedor externo |
 |---|---|---|
@@ -69,34 +66,40 @@ persistente.
 ## Começo rápido
 
 Pré-requisitos: **Docker** + **Python 3.11+**. GPU opcional (~8 GB VRAM
-recomendada). **Qdrant**: use a instância existente do rag-llama
-(`:6333`) — o fork não sobe a sua.
+recomendada). **Qdrant**: uma instância qualquer alcançável
+(`QDRANT_URL` no `.env`) — o app não sobe a sua.
 
 ```bash
-# 1) tudo em um comando (deps + docker + modelos essenciais)
-./scripts/setup.sh --modelos chat,embed        # Linux/macOS/WSL
-powershell -File setup.ps1 -Modelos chat,embed # Windows
+# 1) dependências
+python -m venv .venv && . .venv/bin/activate    # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
-# 2) subir os modelos (llama-server: chat + embedding)
-python servicos_llm.py
+# 2) configurar
+cp .env.example .env        # preencha AUTH_ADMIN_* (login inicial) e QDRANT_URL
 
-# 3) abrir http://localhost:8001 e criar o login
+# 3) subir a API (compose sobe api :8001 + sandbox)
+docker compose up -d --build
+#    ou em modo host: python -X utf8 -m uvicorn api.app:app --port 8001
+
+# 4) LLM + embedding — um dos dois caminhos:
+#    a) llama-server na sua GPU:  python servicos_llm.py
+#    b) qualquer endpoint OpenAI-compatible: LLM_BASE_URL/EMBED_BASE_URL no .env
+
+# 5) abrir http://localhost:8001 e logar com o AUTH_ADMIN_* do .env
 ```
 
-<details>
-<summary><b>Baixando modelos um por um</b> (ou outros tamanhos)</summary>
+No Windows, `setup.ps1` faz os passos 1–3 em um comando.
 
-Um de cada tipo, em `~/models` (ou `D:\models`) —
-`python scripts/baixar_modelos.py --listar` lista o catálogo com
-comandos prontos:
+<details>
+<summary><b>Modelos recomendados</b> (um por tipo, em <code>~/models</code> ou <code>D:\models</code>)</summary>
 
 | Tipo | Modelo | Tamanho |
 |---|---|---|
-| Conversa | Qwen2.5-Coder-7B Q4_K_M | 4,7 GB |
-| Embedding | bge-m3 Q8 | 0,7 GB |
+| Conversa | [Qwen2.5-Coder-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF) Q4_K_M | 4,7 GB |
+| Embedding | [bge-m3](https://huggingface.co/gpustack/bge-m3-GGUF) Q8 | 0,7 GB |
 
-⚠️ O embedding **tem que continuar bge-m3** (1024 dims): é a dimensão
-das coleções existentes no Qdrant compartilhado.
+⚠️ Fixe o embedding em **bge-m3** (1024 dims) ao criar coleções: trocar
+de embedding exige reingestão total da base.
 
 </details>
 
@@ -129,59 +132,127 @@ segue local (bge-m3) para a base não perder dimensão.
 
 </details>
 
-## Ambientes (gitflow: develop → main)
+## Specs — comportamento em markdown
 
-| | produção | desenvolvimento |
-|---|---|---|
-| URL | `ai.disroy.org` | `dev.disroy.org` |
-| branch | `main` | `develop` |
-| deploy | automático a cada push (CI/CD → VPS) | automático a cada push (job `cd-dev`) |
-| stack | `~/apps/rag-chat` · containers `ragchat-*` | `~/apps/rag-chat-dev` · containers `ragchat-dev-*` |
-| estado | volumes próprios (sessions/logs) | volumes próprios e independentes |
-| GPU/LLM | túneis `llm/embed/agente.disroy.org` (estação do usuário) | idem — a GPU nunca reside no servidor |
-| Qdrant | instância externa no host (`:6333`, dados do rag-llama) | idem |
-| reranker | ativo (cross-encoder) | desativado (`RERANKER=0`) — preserva a CPU compartilhada |
+**Todo comportamento da LLM do RagChat vive em
+[`core/specs/*.md`](core/specs), não no código.** O que o assistente
+faz em cada etapa — como responde no modo RAG, como decide entre base e
+web, como corta e classifica um documento na ingestão, como monta uma
+coleção nova por assunto — é uma especificação em markdown que o código
+apenas entrega ao modelo como instrução de sistema (o código monta só o
+envelope: dados + `ETAPA: x`).
 
-Fluxo: desenvolver e validar em `develop` (dev.disroy.org); o avanço
-`develop → main` publica em produção.
+Como funciona o mecanismo:
+
+- Cada etapa do pipeline carrega a sua spec por nome —
+  `core/specs.py` lê o arquivo `.md` (com cache `lru_cache`) na hora de
+  montar o prompt. `spec("chat")` governa o modo RAG,
+  `spec("seed")` governa a criação de coleções, e assim por diante.
+- **Editar a spec muda o comportamento sem tocar em código.** Depois da
+  edição, `POST /api/specs/reload` derruba o cache e a nova spec vale na
+  hora (ou restart da API).
+- As specs também são **registradas no catálogo** (`meta_colecoes`, uma
+  coleção própria do Qdrant, com embedding) — dá para perguntar no
+  próprio chat *“como você decide entre base e web?”* e a resposta vem
+  das specs, via RAG. O sistema documenta a si mesmo.
+
+### Specs e a criação de coleções
+
+As specs são o **ponto focal dos fluxos que criam e evoluem coleções**:
+todo o caminho — do planejamento de fontes à classificação, passando
+pela curadoria em modo Revisão — é governado por elas:
+
+| Spec | Governa |
+|---|---|
+| `seed.md` | criar coleção nova por assunto: planeja as buscas, seleciona fontes, propõe a base |
+| `base_conhecimento.md` | construir base curada em 5 passos |
+| `ingestao.md` | pipeline de ingestão (extração → limpeza → chunks → gate) |
+| `categorizacao.md` | classificar arquivos/coleções (área, categoria — registradas no catálogo) |
+| `edicao_documentos.md` · `modelo_dados.md` | editar chunks / schema dos payloads no Qdrant |
+| `analise_colecoes.md` · `agrupamento.md` · `rotulo_cluster.md` | manutenção: analisar, agrupar duplicados, rotular clusters |
+| `destrinchar.md` | quebrar coleção grande em menores |
+
+### Índice completo das specs
+
+| Grupo | Specs |
+|---|---|
+| Conversa | `chat` (modo RAG estrito) · `hibrido` (base + tom executivo) · `geracao` · `geracao_codigo` (modo livre) · `roteador` (modo auto: base/web/livre) · `reformulacao` (reescreve a pergunta p/ busca) · `exibicao` · `lembrete_final` |
+| Pesquisa | `pesquisa_planner` (plano) · `evidencia` (claims) · `sintese` (síntese citada) · `pesquisa_web` · `busca_neutra` |
+| Agência | `ferramentas` — agente ReAct com MCP, portão de aprovação |
+| Código na conversa | `analise_codigo` · `arquivo_codigo` · `painel_conversa` (painel 📄) |
+| UX | `prompt_melhoria` — ✨ melhorar o prompt antes de enviar |
+
+## API
+
+A API REST do RagChat é **documentada no padrão OpenAPI**: espec
+interativa completa em **`/docs`** (Swagger UI) — todos os endpoints,
+modelos de entrada/saída e autenticação, prontos para testar no
+navegador.
+
+- **Autenticação**: `POST /api/auth/login` devolve o cookie de sessão
+  `ragchat_token` (HMAC); todas as rotas `/api/*` o exigem. Contas vêm
+  de uma allowlist (`usuarios_permitidos.txt`).
+- **Tarefa longa é job**: a rota devolve `{job: id}` imediatamente e o
+  andamento (logs ao vivo, resultado final) sai de
+  `GET /api/<area>/status/{job}` — imune a timeout de proxy.
+- **Modelos no protocolo OpenAI**: toda chamada de LLM/embedding usa o
+  wire padrão (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`).
+  Trocar o motor = apontar `LLM_BASE_URL`/`EMBED_BASE_URL` para
+  qualquer endpoint OpenAI-compatible (llama.cpp, vLLM, provedor cloud)
+  — zero mudança de código.
+
+Superfície por domínio: `auth` (login/conta) · `chat` (consulta com
+jobs, sessões) · `biblioteca` (ingestão, coleções, pesquisa, revisão,
+curadoria, snapshots) · `sandbox` (execução de código) · `sistema`
+(configurações, modelos, provedores) · `telemetria` (contadores,
+histórico) · `agentico` (sessões MCP) · `jobs` (status das famílias de
+job).
+
+```bash
+# exemplo: login + pergunta em modo job
+curl -c jar -X POST http://localhost:8001/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"user": "voce", "senha": "..."}'
+curl -b jar -X POST http://localhost:8001/api/query \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "o que diz a base sobre X?", "mode": "rag", "job": true}'
+curl -b jar http://localhost:8001/api/query/status/<job>   # logs + resposta
+```
 
 ## Arquitetura
 
-<a href="https://github.com/rodneysilva/rag-llama/raw/main/docs/arquitetura.svg">
-  <img src="docs/arquitetura.svg" width="880" alt="Arquitetura do RagChat em camadas: usuário → webui HTMX → API FastAPI (composição + routers) + executor async de jobs + provedores → Qdrant/Sandbox, com estação GPU opcional à direita"/>
-</a>
-
 ```
-┌─ estação com GPU (opcional) ─────────────┐   ┌─ servidor (docker compose) ──────────┐
-│ llama-server  chat :8090 · embed :8081   │⇄⇄│ api :8001   FastAPI + webui (HTMX)   │
-│ agente :8010   troca de modelo · GPU     │tú│ · composição + routers por domínio   │
-└───────────────────────────────────────────┘nel│ · executor async de jobs (in-proc)   │
-                                                │ qdrant     instância EXTERNA :6333  │
-                                                │ sandbox    execução isolada + sites │
-                                                └──────────────────────────────────────┘
+┌─ estação com GPU (opcional) ─────────────┐   ┌─ host / servidor (docker compose) ───┐
+│ llama-server  chat :8090 · embed :8081   │⇄⇄│ api :8000 (int)  FastAPI + webui HTMX │
+│ (binário local em dev · containers GPU   │tú│ · composição + routers por domínio    │
+│  na produção, via endpoint OpenAI-compat)│nel│ · executor async de jobs (in-proc)    │
+└───────────────────────────────────────────┘   │ qdrant     instância externa :6333   │
+                                                │ sandbox    execução isolada + sites   │
+                                                └───────────────────────────────────────┘
 ```
 
 - **Monólito modular em camadas** (SOLID/DDD/Clean): `api/app.py` é
   composição (~90 linhas); rotas em `api/routers/*` por domínio; domínio
-  em `core/*`; contrato normativo em [`docs/arquitetura.md`](docs/arquitetura.md).
+  em `core/*`; contrato normativo em `docs/arquitetura.md` (interno).
 - **Toda tarefa longa é job** no executor async in-process (fila serial,
-  retry com backoff para transientes) — UI nunca bloqueia, sem broker.
-- **A GPU é a estação do usuário** — o servidor não hospeda modelos de
-  linguagem; sem GPU local, provedores cloud cobrem o chat e a base
+  retry com backoff para transientes) — UI nunca bloqueia, **sem broker
+  externo** (sem RabbitMQ/Redis).
+- **A GPU é a máquina de quem opera** — o servidor não hospeda modelos
+  de linguagem; sem GPU local, provedores cloud cobrem o chat e a base
   segue no Qdrant.
 - **Comportamento vive em specs** ([`core/specs/*.md`](core/specs)):
   mudar como o assistente responde é editar markdown, não código.
-- API interativa em **`/docs`** (OpenAPI).
+- Produção recomendada: containers (api + sandbox) sem portas publicadas
+  atrás de proxy reverso; LLM alcançado por HTTPS com API key.
 
 ## Documentação
 
 | Documento | Conteúdo |
 |---|---|
-| [`docs/arquitetura.md`](docs/arquitetura.md) | Contrato de arquitetura (camadas, routers, SOLID, dívidas, procedimento de alteração) |
 | [`AGENTS.md`](AGENTS.md) | Memória operacional: stack, comandos, armadilhas, decisões |
-| [`docs/README.md`](docs/README.md) | Índice da documentação (análises, planos, specs) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Como contribuir (issues e PRs; mudança de comportamento = editar spec) |
-| [`SECURITY.md`](SECURITY.md) | Modelo de segurança (auth scrypt+HMAC, sandbox isolada, segredos no .env) |
+| [`SECURITY.md`](SECURITY.md) | Política de segurança do projeto (auth, sandbox, MCP, segredos) |
+| `docs/` | Análises internas (não versionadas — vivem na máquina de quem opera) |
 
 ## Projetos open source que o sustentam
 
@@ -189,9 +260,10 @@ Fluxo: desenvolver e validar em `develop` (dev.disroy.org); o avanço
 
 ## Segurança
 
-Auth scrypt + tokens HMAC; sandbox em rede interna isolada (não-root);
-ferramenta MCP só executa com aprovação; segredos apenas no `.env`
-(gitignored). Detalhes em [`SECURITY.md`](SECURITY.md).
+Auth scrypt + tokens HMAC e rate limit de login; sandbox em container
+isolado (não-root, sem portas); ferramenta MCP só executa com aprovação
+explícita; segredos apenas no `.env` (gitignored). Detalhes em
+[`SECURITY.md`](SECURITY.md).
 
 ---
 
