@@ -141,16 +141,25 @@ _CABECALHOS_MD = [("#", "h1"), ("##", "h2"), ("###", "h3")]
 
 def _dividir(docs, log):
     """Divide por SEÇÕES (markdown) e depois por tamanho; cada pedaço recebe
-    um cabeçalho contextual "[documento · seção]" no início do texto.
+    um cabeçalho contextual "[documento · seção · parte i/n]" no início do
+    texto.
 
     O cabeçalho entra no embedding (é isso que faz o vetor representar o
     contexto, não só o trecho solto) e viaja no metadata (titulo/secao) para
-    a webui exibir de onde veio. Pedaços sem semântica (menu, referências,
-    fragmentos curtos) e duplicados exatos são descartados.
+    a webui exibir de onde veio. CONTRATO NARRATIVO (pedido do dono 11/09):
+    um chunk NUNCA termina no meio de uma frase — os separadores tentam
+    quebrar em parágrafo → linha → FIM DE FRASE → palavra, nessa ordem
+    (keep_separator="end" preserva a pontuação). Pedaços sem semântica
+    (menu, referências, fragmentos curtos) e duplicados exatos são
+    descartados; se NADA sobrevive, a ingestão falha com o relatório de
+    rejeições em vez de gravar base vazia.
     """
     header_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=_CABECALHOS_MD, strip_headers=False)
     splitter = RecursiveCharacterTextSplitter(
+        separators=["\n\n\n", "\n\n", "\n", ". ", "! ", "? ", "… ",
+                    "; ", " ", ""],
+        keep_separator="end",
         chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP)
 
     pedacos = []
@@ -213,7 +222,10 @@ def _dividir(docs, log):
         cab = " · ".join(x for x in (c.metadata.get("titulo"),
                                      c.metadata.get("secao")) if x)
         if cab:
-            c.page_content = f"[{cab}]\n{c.page_content}"
+            # "parte i/n" no TEXTO: a ordem da história viaja no embedding
+            # e a leitura sabe onde o trecho se encaixa no documento
+            c.page_content = (f"[{cab} · parte {c.metadata['i']}/{c.metadata['n']}]"
+                              f"\n{c.page_content}")
     log(f"✂️  {len(mantidos)} pedaço(s) válido(s) "
         f"({descartados} descartado(s): ruído de página, curto ou duplicado)")
     if _rej_score:
@@ -222,6 +234,13 @@ def _dividir(docs, log):
         resumo = ", ".join(f"{m} ({q})" for m, q in por_motivo)
         log(f"🎛️  gate de qualidade: {len(_rej_score)} chunk(s) abaixo de "
             f"{config.SCORE_CHUNK_MIN} — {resumo}")
+    if not mantidos:
+        # antes: IndexError em chunks[0] silo adiante — material sem nada
+        # aproveitável deve FALHAR CLARO, não gravar base vazia
+        raise ValueError(
+            "nenhum pedaço passou o gate de qualidade — o material veio "
+            "fragmentado/curto demais para virar base útil"
+            + (f" (motivos: {resumo})" if _rej_score else ""))
     return mantidos
 
 
@@ -366,7 +385,7 @@ def ingest_docs(docs, collection=None, rapido=False, log=None):
                        for d in docs},
         "descricoes": {Path(d.metadata.get("source", "?")).name: d.metadata.get("descricao")
                        for d in docs},
-        "sample": chunks[0].page_content[:300],
+        "sample": chunks[0].page_content[:300] if chunks else None,
         "embedding_dim": dim,
         "collection": collection,
         "collection_created": created,
