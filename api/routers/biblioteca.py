@@ -108,6 +108,8 @@ def hx_job(kind: str, job: str, request: Request, r: int = 0):
         elif res.get("chunks") is not None:
             resumo = (f"{res.get('chunks', '?')} pedaço(s) → "
                       f"coleção '{res.get('colecao', '?')}'")
+        elif res.get("apagada"):
+            resumo = f"coleção '{res.get('colecao', '?')}' apagada (pontos + catálogo)"
         elif res.get("arquivo"):
             resumo = f"arquivo: {res['arquivo']}"
         elif res.get("texto"):
@@ -446,7 +448,7 @@ def hx_colecao_apagar(nome: str, request: Request):
     return TEMPLATES.TemplateResponse(
         request, "_job.html",
         {"request": request, "kind": "manutencao", "job": job,
-         "rotulo": f"apagar {nome}", "linhas": [], "running": True})
+         "rotulo": f"🗑 apagar · {nome}", "linhas": [], "running": True})
 
 
 @router.post("/hx/revisao/descartar")

@@ -63,9 +63,8 @@
                 title="fotografa id+vetor+payload da coleção agora (restaurável no cartão de snapshots)">📸 snapshot</button>
         <button type="button" onclick="higienizarColecao('{{ c.nome | e }}', this)"
                 title="limpeza determinística: frases reconstituídas, ruído e duplicados fora, re-embed no mesmo id">🧹 higienizar</button>
-        <button class="perigo" hx-post="/hx/colecao/{{ c.nome }}/apagar"
-                hx-target="#executando" hx-swap="afterbegin"
-                hx-confirm="apagar {{ c.nome }} inteira? (sem volta)">🗑 apagar</button>
+        <button class="perigo" type="button" onclick="apagarColecao('{{ c.nome | e }}', this)"
+                title="apaga a coleção inteira do Qdrant E do catálogo (job com log ao vivo — o card sai da tela ao concluir)">🗑 apagar</button>
       </div>
       {# ACCORDION INLINE: os documentos abrem DENTRO do card (o drawer
          fixo quebrava a tela e o fechar não funcionava) — lazy: só baixa
@@ -517,6 +516,79 @@
       + rotulo + " — em andamento…</div>";
     zona.prepend(div);
     htmx.process(div);
+  }
+
+  // ═══ 🗑 APAGAR coleção com estado NA TELA (pedido 11/09): antes o job
+  // dizia "✓ concluído" e a coleção SEGUIA na grade até um F5. Agora:
+  // card entra em "apagando…" (opaco, botões travados) → job com log no
+  // topo → ao concluir DE VERDADE o card sai da grade, KPIs e o seletor
+  // de coleção-alvo atualizam na hora. Erro devolve o card ao normal.
+  async function apagarColecao(nome, btn) {
+    if (!confirm("🗑 apagar '" + nome + "' inteira? (sem volta — pontos + catálogo)")) return;
+    const card = btn.closest(".colecao-card");
+    const grid = document.querySelector(".colecoes-cards");
+    card.classList.add("apagando");
+    card.querySelectorAll("button").forEach(b => b.disabled = true);
+    btn.textContent = "🗑 apagando…";
+    const restaurar = () => {
+      card.classList.remove("apagando");
+      card.querySelectorAll("button").forEach(b => b.disabled = false);
+      btn.textContent = "🗑 apagar";
+    };
+    let job = null;
+    try {
+      const r = await fetch("/hx/colecao/" + encodeURIComponent(nome) + "/apagar",
+                            {method: "POST"});
+      const html = await r.text();
+      if (!r.ok) throw new Error(html.replace(/<[^>]+>/g, " ").slice(0, 160));
+      const zona = document.getElementById("executando");
+      const div = document.createElement("div");
+      div.innerHTML = html.trim();
+      const jobEl = div.firstElementChild;
+      zona.prepend(jobEl);
+      htmx.process(jobEl);          // card do job: log ao vivo no topo
+      job = (jobEl.id || "").replace("job-", "");
+    } catch (e) {
+      restaurar(); toast("falha ao disparar: " + e.message, "erro");
+      return;
+    }
+    // acompanha até o FIM REAL — o card do job só EXIBE; quem tira a
+    // coleção da tela é aqui (JSON do registry, mesmo contrato do polling)
+    let n = 0;
+    const t = setInterval(async () => {
+      if (++n > 300) { clearInterval(t); return; }   // teto ~6 min
+      try {
+        const j = await (await fetch("/api/manutencao/status/" + job)).json();
+        if (j.running) return;
+        clearInterval(t);
+        if (j.error) {
+          restaurar(); toast("✕ '" + nome + "': " + j.error, "erro");
+          return;
+        }
+        card.remove();               // ✓ apagada de verdade → fora da grade
+        const opt = document.querySelector("#colecao option[value='" + nome + "']");
+        if (opt) opt.remove();       // seletor de coleção-alvo acompanha
+        if (grid && !grid.querySelector(".colecao-card"))
+          grid.insertAdjacentHTML("beforeend",
+            '<p class="mut">nenhuma coleção ainda.</p>');
+        _atualizarKpisBib();
+        toast("🗑 '" + nome + "' apagada de verdade (pontos + catálogo) — fora da tela e do Qdrant");
+      } catch { /* rede engasgou: próxima passada tenta de novo */ }
+    }, 1200);
+  }
+
+  // KPIs do topo recalculados do que está na grade (mesma formatação PT
+  // do pontos_fmt do servidor)
+  function _atualizarKpisBib() {
+    const cards = [...document.querySelectorAll(".colecao-card")];
+    const pts = cards.reduce((s, c) =>
+      s + (parseInt(((c.querySelector(".cc-pts") || {}).textContent || "0")) || 0), 0);
+    document.querySelectorAll(".bib-kpis .kpi b").forEach(b => {
+      const kpi = b.closest(".kpi");
+      if (!kpi) return;
+      if (kpi.textContent.includes("coleções")) b.textContent = cards.length;
+      else if (kpi.textContent.includes("pontos")) b.textContent = pts.toLocaleString("pt-BR");
+    });
   }
 
   async function snapshotColecao(nome, btn) {
