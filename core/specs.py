@@ -26,10 +26,12 @@ def valor(name: str, chave: str, padrao: str = "") -> str:
     """Valor de uma linha `CHAVE: texto` dentro da spec — as PALAVRAS
     exibidas ao usuário vivem na spec (regra do projeto: comportamento em
     spec, não no código). `padrao` é o fallback se a linha ou a spec
-    inteira sumirem — texto de exibição nunca derruba o fluxo."""
+    inteira sumirem — texto de exibição nunca derruba o fluxo. Um "\\n"
+    escrito na linha vira quebra de texto real."""
     try:
         m = re.search(rf"(?m)^{re.escape(chave)}\s*:\s*(.+)$", spec(name))
-        return (m.group(1).strip() if m else "") or padrao
+        return ((m.group(1).strip() if m else "") or padrao).replace(
+            "\\n", "\n")
     except Exception:
         return padrao
 

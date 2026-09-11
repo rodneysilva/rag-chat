@@ -518,6 +518,17 @@ _RE_REF = re.compile(r"<ref\b[^>]*(?:/>|>.*?</ref>)|</ref>", re.I | re.S)
 _RE_NOTA = re.compile(
     r"\s*\[(?:\d{1,3}|[a-z]|nota [^\]\n]{1,24}"
     r"|cita[çc][ãa]o necess[áa]ria|citation needed)\]", re.I)
+# ⛳ PEDIDO DE CÓDIGO no rag puro (spec core/specs/rag_puro.md, pedido do
+# dono 12/09: "hello world em qualquer linguagem com base no que tenho no
+# qdrant, sem recorrer a llm"): pergunta pede código e o fragmento TEM
+# bloco cercado (```) → o bloco entra INTEIRO e VERBATIM — EXTRAÇÃO da
+# base, nunca geração. Sem bloco no fragmento, o trecho de prosa segue.
+_RE_PEDIDO_CODIGO = re.compile(
+    r"hello\s*world|ol[áa]\s+mundo|\bc[óo]digo\b|\bcode\b|\bscript\b|"
+    r"\bsnippet\b|exemplo\s+de\s+c[óo]digo|mostre?\s+o\s+c[óo]digo|"
+    r"como\s+(?:escrever|implementar|programar)\b|"
+    r"\bfun[çc][ãa]o\s+(?:que\s+)?(?:fa[çc]a|retorne)", re.I)
+_RE_BLOCO_CERCADO = re.compile(r"```[\w+\-#.]*(?:[ \t]*\r?\n).*?```", re.S)
 _STOP_DIGEST = frozenset(
     "a o as os um uma uns umas de do da das dos e em no na nos nas por para "
     "com que qual quais quanto quando onde como quem cuja ao aos à às é foi "
@@ -631,7 +642,8 @@ def digest_rag(question, docs, limite: int = 4) -> str:
         except Exception:
             pass  # sanitização falhou = entrega o texto cru (blinda o fluxo)
         # header "[título contextual]" do chunk é METADADO de indexação — fora
-        txt = re.sub(r"^\s*\[[^\]\n]{1,140}\][ \t]*\r?\n", "", txt, count=1)
+        # (cap 260: o padrão novo "O que é · Para que serve · parte i/n" é longo)
+        txt = re.sub(r"^\s*\[[^\]\n]{1,260}\][ \t]*\r?\n", "", txt, count=1)
         # detritos de citação (o _md_basico ESCAPA html — <sup> virava texto
         # visível na resposta, bug real visto em produção 12/09)
         txt = _RE_SUP.sub(" ", txt)
@@ -639,17 +651,40 @@ def digest_rag(question, docs, limite: int = 4) -> str:
         txt = _RE_NOTA.sub("", txt)
         txt = re.sub(r"[ \t]{2,}", " ", txt)
         txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
+        # ⛳ PEDIDO DE CÓDIGO (regra 3 da spec rag_puro.md): o bloco cercado
+        # do fragmento entra INTEIRO e VERBATIM — a base RESPONDE com o que
+        # tem (extração), sem gerar nada; arquivo de código PURO (sem cerca
+        # no texto) vira bloco cercado da linguagem do arquivo
+        trecho = None
+        if _RE_PEDIDO_CODIGO.search(question or ""):
+            blocos = _RE_BLOCO_CERCADO.findall(txt)
+            if blocos:
+                trecho = "\n\n".join(blocos[:2])
+            elif d.metadata.get("camada") == "codigo":
+                _nome = str(d.metadata.get("arquivo")
+                            or d.metadata.get("source") or "")
+                _ext = _nome.rpartition(".")[2].lower()
+                _lingua = str(d.metadata.get("linguagem") or
+                              {"py": "python", "cs": "csharp", "js": "javascript",
+                               "ts": "typescript", "rs": "rust", "go": "go",
+                               "sh": "bash", "ps1": "powershell"}.get(_ext, _ext))
+                trecho = (f"```{_lingua}\n"
+                          f"{_digest_trecho(txt, termos, False)}\n```")
         itens.append({
             "n": len(itens) + 1,
-            "trecho": _digest_trecho(txt, termos, pergunta_pt),
+            "trecho": trecho or _digest_trecho(txt, termos, pergunta_pt),
             # slug de URL vira título legível ("Cuisine_of_Par%C3%A1" →
             # "Cuisine of Pará")
             "titulo": _unquote_titulo(d.metadata.get("titulo")),
+            "o_que_e": str(d.metadata.get("o_que_e") or "").strip(),
             "colecao": d.metadata.get("colecao", ""),
             "area": d.metadata.get("area", ""),
         })
     for it in itens:
-        it["traduzivel"] = pergunta_pt and not _eh_portugues(it["trecho"])
+        # bloco de código extraído NÃO é prosa: jamais vai ao tradutor
+        it["traduzivel"] = (pergunta_pt
+                            and not it["trecho"].lstrip().startswith("```")
+                            and not _eh_portugues(it["trecho"]))
     # fila de tradução: trecho + título (só título com evidência REAL de
     # inglês) de cada item não-PT — UMA passada do modelo cobre tudo
     pendentes = []
@@ -681,6 +716,11 @@ def digest_rag(question, docs, limite: int = 4) -> str:
                else f"**{it['n']}**")
         if origem:
             cab += f" — {origem}"
+        # O QUE É (regra 1 da spec rag_puro.md): a metadata do padrão de
+        # ingestão traz "o que é" — subtítulo quando difere do título
+        oq = it.get("o_que_e") or ""
+        if oq and oq != str(it["titulo"] or ""):
+            cab += f"\n\n*{oq[:140]}*"
         if it.get("traduzido"):
             cab += " " + _palavra_trad("MARCADOR_TRADUZIDO", "*(traduzido)*")
         partes.append(cab + "\n\n" + it["trecho"])

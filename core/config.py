@@ -104,6 +104,17 @@ FIELDS = {
                        "EN→PT). Padrão Helsinki-NLP/opus-mt-tc-big-en-pt "
                        "(~110M, safetensors ~450 MB — o opus-mt-en-PT "
                        "antigo saiu do catálogo do HF)", "text"),
+    "CONSOLIDA":      ("Aplicação",
+                       "Consolidação na ingestão (1=liga): antes de incluir "
+                       "um pedaço, busca semelhante na MESMA coleção — "
+                       "score ≥ CONSOLIDA_SCORE funde no ponto existente "
+                       "(complementa); novo entra com id determinístico "
+                       "(reingestão sobrepõe, não empilha). Regras na spec "
+                       "core/specs/consolidacao.md", "int"),
+    "CONSOLIDA_SCORE": ("Aplicação",
+                        "Similaridade (0–1) em que um pedaço novo é a MESMA "
+                        "informação de um existente → funde. 0.92 é o padrão "
+                        "do repo (quase-duplicado do preview/pesquisa)", "float"),
 }
 
 # chaves cujo valor é SEGREDO: exibidas mascaradas e nunca regravadas
@@ -141,6 +152,8 @@ RERANKER = True
 RERANK_MODEL = "BAAI/bge-reranker-base"
 TRADUTOR = True
 TRADUTOR_MODEL = "Helsinki-NLP/opus-mt-tc-big-en-pt"
+CONSOLIDA = True
+CONSOLIDA_SCORE = 0.92
 
 
 def set_env(chave: str, valor: str) -> None:
@@ -197,6 +210,7 @@ def reload():
     global AUTH_SECRET, AUTH_ADMIN_USER, AUTH_ADMIN_PASS
     global LLAMA_BIN
     global MOCK_LLM, RERANKER, RERANK_MODEL, TRADUTOR, TRADUTOR_MODEL
+    global CONSOLIDA, CONSOLIDA_SCORE
     serper_ambiente = os.environ.get("SERPER_API_KEY", "")  # env real tem prioridade
     # em container: environment do compose VENCE o .env (endpoints de infra);
     # no host: .env é a fonte da verdade (comportamento original)
@@ -237,6 +251,8 @@ def reload():
     TRADUTOR = _bool_env("TRADUTOR", True)
     TRADUTOR_MODEL = os.getenv(
         "TRADUTOR_MODEL", "Helsinki-NLP/opus-mt-tc-big-en-pt").strip()
+    CONSOLIDA = _bool_env("CONSOLIDA", True)
+    CONSOLIDA_SCORE = float(os.getenv("CONSOLIDA_SCORE", "0.92"))
 
 
 def as_dict():
@@ -264,6 +280,8 @@ def as_dict():
         "RERANK_MODEL": RERANK_MODEL,
         "TRADUTOR": int(TRADUTOR),
         "TRADUTOR_MODEL": TRADUTOR_MODEL,
+        "CONSOLIDA": int(CONSOLIDA),
+        "CONSOLIDA_SCORE": CONSOLIDA_SCORE,
     }
 
 

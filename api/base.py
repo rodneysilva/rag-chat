@@ -998,6 +998,8 @@ _DICAS_CAMPO = {
     "RERANK_MODEL": "Modelo do reranker no HuggingFace. base = leve (1,1 GB); v2-m3 = melhor em PT (2,3 GB) — compare no bench antes de trocar.",
     "TRADUTOR": "1 = trechos EN do digest rag saem em PT (opus-mt via ctranslate2 int8 na CPU — rápido; torch puro era minutos). 0 = desliga (fica no idioma original).",
     "TRADUTOR_MODEL": "Modelo do tradutor (HuggingFace, Marian EN→PT — convertido p/ int8 no 1º uso). Padrão opus-mt-tc-big-en-pt (~450 MB); só troque por outro Marian EN→PT.",
+    "CONSOLIDA": "1 = antes de incluir um pedaço, busca semelhante na MESMA coleção: ≥ CONSOLIDA_SCORE funde/complementa o ponto existente; novo ganha id determinístico (reingestão sobrepõe, não empilha). 0 = comportamento antigo (append puro).",
+    "CONSOLIDA_SCORE": "Similaridade (0–1) em que o pedaço novo conta como a MESMA informação de um ponto existente → consolida. Padrão 0.92 (quase-duplicado).",
 }
 
 
@@ -1952,7 +1954,7 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                             # resposta-direta abria com "[frango ao leite
                             # passo a passo]" — o cabeçalho contextual do
                             # chunk é METADADO de indexação, não conteúdo)
-                            limpo = re.sub(r"^\s*\[[^\]\n]{1,140}\][ \t]*\r?\n",
+                            limpo = re.sub(r"^\s*\[[^\]\n]{1,260}\][ \t]*\r?\n",
                                            "", conteudo, count=1)
                             resposta_direta = (limpo.strip() or conteudo).strip()
                     except Exception as e:
@@ -2247,14 +2249,17 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                 # o reranker (bilíngue) leu a pergunta × cada fragmento e
                 # nenhum pontuou como relevante — mostrar o resto como
                 # "resposta" era entregar OUTRO assunto (caso real:
-                # "receita de frango" → churrasco/picanha)
-                answer = (
+                # "receita de frango" → churrasco/picanha). O TEXTO vem da
+                # spec rag_puro.md (palavras ao usuário fora do código).
+                from core.specs import valor as _valor_spec
+                answer = _valor_spec(
+                    "rag_puro", "MSG_SEM_SINAL",
                     "⚠️ **Nada na base responde a esta pergunta** — o "
                     "reranker analisou os fragmentos recuperados e nenhum "
-                    "tem relação real com o pedido (a base não parece "
-                    "conter este assunto).\n\nO material abaixo é apenas o "
-                    "mais próximo que a busca encontrou, por referência:"
-                    "\n\n" + answer)
+                    "tem relação real com o pedido (a base não parece conter "
+                    "este assunto).\n\nO material abaixo é apenas o mais "
+                    "próximo que a busca encontrou, por referência:\n\n"
+                ) + answer
         else:
             # spec restritiva (F2-8): SEM contexto não há o que responder —
             # a frase exata, sem gastar chamada de LLM.

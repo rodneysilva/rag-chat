@@ -70,7 +70,7 @@ def higienizar_colecao(colecao: str, log=None) -> dict:
             continue
         # cabeçalho contextual de ingests novos não é ruído: preserva
         cab = ""
-        m = re.match(r"^(\[[^\]\n]{3,120}\])\n", original)
+        m = re.match(r"^(\[[^\]\n]{3,260}\])\n", original)
         if m:
             cab, original = m.group(1) + "\n", original[m.end():]
         limpo = limpar_texto(original)

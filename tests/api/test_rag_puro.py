@@ -193,6 +193,60 @@ def test_digest_nao_traduz_titulo_portugues_sem_evidencia_de_ingles(
     assert chamadas == []                     # nada foi enviado ao modelo
 
 
+def test_digest_pedido_de_codigo_extrai_bloco_da_base(monkeypatch):
+    """Pedido do dono 12/09 ("hello world em qualquer linguagem com base no
+    que tenho no qdrant, sem recorrer a llm"): a pergunta pede código e o
+    fragmento TEM bloco cercado → o bloco entra INTEIRO e VERBATIM —
+    EXTRAÇÃO da base, jamais geração. E bloco NÃO vai ao tradutor."""
+    from core import rag, tradutor
+
+    def _boom(*a, **kw):
+        raise AssertionError("bloco de código foi enviado ao tradutor")
+    monkeypatch.setattr(tradutor, "traduzir_lote", _boom)
+    doc = Document(
+        page_content="Exemplo clássico de primeiro programa em Python.\n\n"
+                     '```python\nprint("hello world")\n```',
+        metadata={"colecao": "python", "titulo": "Primeiro programa"})
+    out = rag.digest_rag("hello world em python", [doc])
+    assert 'print("hello world")' in out      # verbatim, extraído da base
+    assert "```python" in out                 # cerca preservada (vira card)
+
+
+def test_digest_codigo_puro_vira_bloco_cercado_da_linguagem():
+    """Arquivo de código INTEIRO ingerido (camada codigo, sem cerca no
+    texto): pedido de código entrega o trecho CERCADO na linguagem do
+    arquivo — card de código na webui, não prosa solta."""
+    from core import rag
+    doc = Document(page_content='def ola():\n    print("hello world")',
+                   metadata={"colecao": "python", "titulo": "ola.py",
+                             "camada": "codigo", "arquivo": "ola.py",
+                             "linguagem": "Python"})
+    out = rag.digest_rag("me mostre um hello world em python", [doc])
+    assert "```" in out and 'print("hello world")' in out
+
+
+def test_digest_mostra_o_que_e_do_padrao_de_ingestao():
+    """Regra 1 da spec rag_puro.md: a metadata do PADRÃO de ingestão
+    (spec consolidacao.md) traz o_que_e — subtítulo do fragmento quando
+    difere do título."""
+    from core import rag
+    doc = Document(
+        page_content="O vatapá é um prato paraense à base de dendê.",
+        metadata={"colecao": "culinaria", "titulo": "Vatapá",
+                  "o_que_e": "Vatapá · Origem e preparo"})
+    out = rag.digest_rag("o que é o vatapá?", [doc])
+    assert "*Vatapá · Origem e preparo*" in out
+
+
+def test_aviso_sem_sinal_vive_na_spec():
+    """Regra do projeto: palavras ao usuário na spec (rag_puro.md), com o
+    "\\n" da linha virando quebra real."""
+    from core.specs import valor
+    msg = valor("rag_puro", "MSG_SEM_SINAL")
+    assert msg.startswith("⚠️") and "Nada na base" in msg
+    assert "\n\nO material" in msg          # \n da spec vira quebra real
+
+
 def test_digest_rag_sanitiza_recorta_e_numera():
     """Pedido do dono 12/09: '<sup> aparecendo', fragmento-monstro inteiro e
     resposta de outra pergunta — o digest limpa detritos de citação, cabeça

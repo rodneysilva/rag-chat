@@ -23,7 +23,7 @@ from langchain_text_splitters import (
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 
-from . import catalog, config, contadores, rag
+from . import catalog, config, consolida, contadores, rag
 from .limpeza import e_lixo, e_lixo_documento, limpar_texto, score_chunk, titulo_de, url_de
 
 
@@ -228,13 +228,25 @@ def _dividir(docs, log):
         ar = c.metadata.get("arquivo", "?")
         indice[ar] += 1
         c.metadata["i"], c.metadata["n"] = indice[ar], totais[ar]
+        # PADRÃO de todo ponto (spec consolidacao.md, pedido do dono 12/09
+        # "um header de o que é, pra que serve"): a 1ª linha do texto é o
+        # cabeçalho "O que é · Para que serve · parte i/n" — contextualiza
+        # o EMBEDDING; a exibição (digest/resposta direta) o remove. Os
+        # mesmos campos viajam na metadata (o_que_e/pra_que_serve).
         cab = " · ".join(x for x in (c.metadata.get("titulo"),
                                      c.metadata.get("secao")) if x)
-        if cab:
-            # "parte i/n" no TEXTO: a ordem da história viaja no embedding
-            # e a leitura sabe onde o trecho se encaixa no documento
-            c.page_content = (f"[{cab} · parte {c.metadata['i']}/{c.metadata['n']}]"
-                              f"\n{c.page_content}")
+        serve = str(c.metadata.get("descricao")
+                    or c.metadata.get("resumo_pt")
+                    or c.metadata.get("proposito") or "")[:90]
+        c.metadata["o_que_e"] = cab or c.metadata.get("categoria", "")
+        c.metadata["pra_que_serve"] = serve
+        partes = ([f"O que é: {cab[:100]}"] if cab else []) + \
+                 ([f"Para que serve: {serve}"] if serve else [])
+        partes.append(f"parte {c.metadata['i']}/{c.metadata['n']}")
+        # "parte i/n" no TEXTO: a ordem da história viaja no embedding
+        # e a leitura sabe onde o trecho se encaixa no documento
+        c.page_content = (f"[{' · '.join(partes)}]"
+                          f"\n{c.page_content}")
     log(f"✂️  {len(mantidos)} pedaço(s) válido(s) "
         f"({descartados} descartado(s): ruído de página, curto ou duplicado)")
     if _rej_score:
@@ -362,7 +374,17 @@ def ingest_docs(docs, collection=None, rapido=False, log=None):
         log(f"♻️  Coleção '{collection}' já existe — pedaços serão adicionados")
 
     log(f"⬆️ Indexando {len(chunks)} pedaço(s) no Qdrant ('{collection}')…")
-    rag.vectorstore(client, collection).add_documents(chunks)
+    # 🔁 CONSOLIDAÇÃO NA INCLUSÃO (spec core/specs/consolidacao.md, pedido
+    # do dono 12/09): nenhum pedaço entra sem uma BUSCA PRÉVIA na mesma
+    # coleção — semelhante ≥ CONSOLIDA_SCORE funde/complementa o ponto
+    # existente; novo ganha id determinístico (reingestão sobrepõe). Flag
+    # desligada → comportamento antigo (append puro do add_documents).
+    if getattr(config, "CONSOLIDA", True):
+        saida = consolida.consolidar(client, collection, chunks, log=log)
+    else:
+        rag.vectorstore(client, collection).add_documents(chunks)
+        saida = {"novos": len(chunks), "consolidados": 0,
+                 "inalterados": 0}
 
     # 4) Registrar a coleção no catálogo (categoria + descricao em PT)
     meta = catalog.list_meta(client)
@@ -399,6 +421,11 @@ def ingest_docs(docs, collection=None, rapido=False, log=None):
         "collection": collection,
         "collection_created": created,
         "total_points": total,
+        # 📥 SAÍDA PADRÃO de toda inclusão/alteração (spec consolidacao.md,
+        # pedido do dono 12/09: "uma saída para todas as inclusões")
+        "novos": saida.get("novos", len(chunks)),
+        "consolidados": saida.get("consolidados", 0),
+        "inalterados": saida.get("inalterados", 0),
     }
 
 
