@@ -1962,6 +1962,16 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                             f"(top {max(notas):.2f}) — score denso deprimido "
                             "(pergunta e base em idiomas diferentes?) — "
                             "contexto real mantido", "busca")
+                    elif body.mode == "rag":
+                        # ⚡ RAG PURO: o descarte abaixo protege o PROMPT da
+                        # LLM (contexto fraco = alucinação) — mas aqui não há
+                        # prompt: o material recuperado É a resposta, e zerar
+                        # deixaria o usuário sem "só a base" que ele pediu.
+                        # Os fracos (acima do SCORE_MIN da busca) seguem no
+                        # digest, ordenados; quem julga relevância é o dono.
+                        log(f"💡 top {top_score:.3f} abaixo do corte "
+                            f"{config.SCORE_FRACO}, mas modo rag MOSTRA o que "
+                            "a base tem (LLM não consultada)", "busca")
                     else:
                         log(f"⚠️ fragmentos fracos (top {top_score:.3f} < "
                             f"{config.SCORE_FRACO}) — a base não sustenta esta "

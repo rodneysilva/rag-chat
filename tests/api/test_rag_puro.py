@@ -94,6 +94,25 @@ def test_hibrido_mantem_o_ciclo_de_energia(cenario, monkeypatch):
     assert r["answer"] == "síntese do modelo"
 
 
+def test_rag_puro_frago_nao_zera_a_base(cenario, monkeypatch):
+    """top abaixo do SCORE_FRACO: o descarte protege o PROMPT da LLM
+    (contexto fraco = alucinação) — no rag puro não há prompt, o material
+    recuperado É a resposta (validado ao vivo: 'receita de frango' trazia
+    4 fragmentos reais e o guardrail zerava tudo)."""
+    base, rag = cenario
+    monkeypatch.setattr(base.config, "SCORE_FRACO", 0.55)
+    fracos = [(_doc("Fragmento medíocre sobre culinária."), 0.50, "c"),
+              (_doc("Outro fragmento medíocre."), 0.48, "c")]
+    monkeypatch.setattr(rag, "search", lambda *a, **kw: (fracos, {}))
+    monkeypatch.setattr(base.rerank, "notas_de",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            RuntimeError("sem rerank no teste")))
+    r = _processar_query(QueryIn(question="o que é o vatapá?", mode="rag",
+                                 collections=["c"]))
+    assert len(r["docs"]) == 2            # nada descartado: a base responde
+    assert "culinária" in r["answer"]
+
+
 def test_digest_rag_sanitiza_e_numera():
     from core import rag
     docs = [
