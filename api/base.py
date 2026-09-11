@@ -1360,6 +1360,13 @@ def _erro_modelo(modelo_pedido: str) -> HTTPException:
 
 _seed = JobRegistry("seed", "seed")
 
+# FIM de job que MEXE em coleções ⇒ cache do scan cai na hora (criação de
+# coleção aparecia só 30 s depois; o mesmo fantasma da exclusão, ao
+# contrário). Registries de leitura (query/pesquisa/sandbox/mcp) ficam de
+# fora — invalidar a cada resposta do chat seria desperdício.
+for _reg in (_manutencao, _ingest, _higieniza, _limpeza, _seed):
+    _reg.ao_concluir(lambda jid: _scan_invalidar())
+
 
 _varredura = JobRegistry("var", "varredura")
 

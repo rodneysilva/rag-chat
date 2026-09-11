@@ -68,7 +68,17 @@ class JobRegistry:
         self.jobs: dict = {}
         self.lock = threading.Lock()
         self._seq = count(1)
+        # callbacks de PÓS-CONCLUSÃO (a api invalida caches aqui — core não
+        # conhece a camada de cima; quem precisa se registra)
+        self._hooks_concluir: list = []
         TODOS_JOBS.append(self)
+
+    def ao_concluir(self, cb) -> None:
+        """Registra callback disparado quando um job deste registry fecha
+        (concluído, com erro ou cancelado). Ex.: invalidar o cache do scan
+        de coleções — ingest cria, manutenção apaga; a webui precisa ver
+        na hora, não 30 s depois."""
+        self._hooks_concluir.append(cb)
 
     def novo_id(self) -> str:
         return f"{self.prefixo}_{next(self._seq)}-{self._BOOT}"
@@ -150,15 +160,24 @@ class JobRegistry:
         """Fecha o job (running=False) gravando result e/ou error. Job
         CANCELADO pelo usuário: o resultado tardio é DESCARTADO (o cancelou
         porque mandou outra — sobrescrever ressuscitaria a resposta morta)."""
-        with self.lock:
-            j = self.jobs.get(jid)
-            if not j or j.get("cancelado"):
-                return
-            if result is not None:
-                j["result"] = result
-            if error is not None:
-                j["error"] = error
-            j["running"] = False
+        try:
+            with self.lock:
+                j = self.jobs.get(jid)
+                if not j or j.get("cancelado"):
+                    return
+                if result is not None:
+                    j["result"] = result
+                if error is not None:
+                    j["error"] = error
+                j["running"] = False
+        finally:
+            # hooks em TODA saída (cancelado também: um ingest abortado no
+            # meio já pode ter gravado pontos — o cache tem que cair)
+            for cb in self._hooks_concluir:
+                try:
+                    cb(jid)
+                except Exception:
+                    pass
 
     def cancelar(self, jid: str, motivo: str = "cancelado pelo usuário") -> bool:
         """Cancela UM job (pedido do dono: nova mensagem enquanto pensa →
