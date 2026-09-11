@@ -3,10 +3,11 @@
 {% block conteudo %}
 <div class="pagina-conteudo">
 
-{# ═══ REESTRUTURAÇÃO (11/09): a página chama BIBLIOTECA — as coleções
-   vêm PRIMEIRO (KPIs + grade única, SEM agrupamento — pedido do dono);
-   a aquisição virou a 2ª seção e o resto (manutenção, ensinar, MCP)
-   recolhe em details. Os botões de ação do card QUEBRAM linha
+{# ═══ REESTRUTURAÇÃO (11/09): ➕ adicionar conhecimento abre a página
+   (pedido do dono — o fluxo começa por ele), com o ASSUNTO/entrada
+   abrindo a linha e a fonte logo depois. Coleções vem na 2ª seção
+   (KPIs + grade única, SEM agrupamento) e o resto (manutenção, ensinar,
+   MCP) recolhe em details. Os botões de ação do card QUEBRAM linha
    (.cc-acoes wrap no app.css) — antes transbordavam e "sumiam". #}
 
 <header class="bib-cab">
@@ -37,47 +38,6 @@
 </div>
 
 <section class="cartao">
-  <div class="linha" style="align-items:center; margin-bottom:.6rem;">
-    <h2 style="margin:0; flex:0 0 auto;">📚 Coleções</h2>
-    <div style="flex:1; min-width:min(100%,12rem); max-width:20rem;">
-      <input type="text" id="filtro-colecao" placeholder="🔎 filtrar por nome/categoria…" style="padding:.35rem .55rem; font-size:.85rem;">
-    </div>
-  </div>
-
-  <div class="colecoes-cards">
-    {% for c in colecoes %}
-    <div class="colecao-card linha-colecao" data-busca="{{ c.nome }} {{ c.categoria or '' }} {{ c.descricao or '' }}">
-      <div class="cc-topo">
-        <b class="cc-nome">{{ c.nome }}</b>
-        <span class="cc-pts">{{ c.points }} pts</span>
-      </div>
-      <p class="cc-cat">{{ c.categoria or "—" }}</p>
-      <p class="cc-desc">{{ (c.descricao or "")[:140] }}</p>
-      <div class="cc-acoes">
-        <button onclick="alternarDocs(this, '{{ c.nome | e }}')"
-                data-aberto="0"
-                title="documentos da coleção (nomes, pedaços, prévia)">📄 documentos</button>
-        <button hx-post="/hx/enriquecer/{{ c.nome }}" hx-target="#executando" hx-swap="afterbegin"
-                title="a LLM re-lê amostras e regenera área/categoria/descrição">✨ enriquecer</button>
-        <button type="button" onclick="snapshotColecao('{{ c.nome | e }}', this)"
-                title="fotografa id+vetor+payload da coleção agora (restaurável no cartão de snapshots)">📸 snapshot</button>
-        <button type="button" onclick="higienizarColecao('{{ c.nome | e }}', this)"
-                title="limpeza determinística: frases reconstituídas, ruído e duplicados fora, re-embed no mesmo id">🧹 higienizar</button>
-        <button class="perigo" type="button" onclick="apagarColecao('{{ c.nome | e }}', this)"
-                title="apaga a coleção inteira do Qdrant E do catálogo (job com log ao vivo — o card sai da tela ao concluir)">🗑 apagar</button>
-      </div>
-      {# ACCORDION INLINE: os documentos abrem DENTRO do card (o drawer
-         fixo quebrava a tela e o fechar não funcionava) — lazy: só baixa
-         a lista no 1º clique; clicar de novo fecha. #}
-      <div class="docs-slot" id="docs-{{ c.nome }}" hidden></div>
-    </div>
-    {% else %}
-    <p class="mut">nenhuma coleção ainda.</p>
-    {% endfor %}
-  </div>
-</section>
-
-<section class="cartao">
   <h2 style="margin-top:0;">➕ Adicionar conhecimento</h2>
   <p class="descricao">Uma entrada; todo caminho termina na <b>revisão</b> — você vê cada documento
   (como veio × como vai entrar), duplicados, categorias e o score de aderência, e aplica só o aprovado.</p>
@@ -87,6 +47,9 @@
         hx-encoding="multipart/form-data">
     <div class="linha">
       <div>
+        <label id="rotulo-entrada">assunto (qualquer idioma; a busca sai em inglês)</label>
+        <input type="text" name="entrada" id="entrada" placeholder="ex.: receitas brasileiras, kubernetes, diagnóstico médico…">
+      </div><div>
         <label>fonte</label>
         <select name="fonte" id="fonte">
           <option value="pesquisa">pesquisa na web (evidências)</option>
@@ -94,10 +57,6 @@
           <option value="pasta">pasta do servidor</option>
           <option value="hf">huggingface (datasets)</option>
         </select>
-      </div>
-      <div>
-        <label id="rotulo-entrada">assunto (qualquer idioma; a busca sai em inglês)</label>
-        <input type="text" name="entrada" id="entrada" placeholder="ex.: receitas brasileiras, kubernetes, diagnóstico médico…">
       </div>
       <div class="estreito" id="zona-hf-btn" style="display:none; align-self:end;">
         <button type="button" class="" onclick="hfBuscar()" id="btn-hf">🔍 listar datasets</button>
@@ -219,6 +178,47 @@
         oculto.value = marcados;
       });
   </script>
+</section>
+
+<section class="cartao">
+  <div class="linha" style="align-items:center; margin-bottom:.6rem;">
+    <h2 style="margin:0; flex:0 0 auto;">📚 Coleções</h2>
+    <div style="flex:1; min-width:min(100%,12rem); max-width:20rem;">
+      <input type="text" id="filtro-colecao" placeholder="🔎 filtrar por nome/categoria…" style="padding:.35rem .55rem; font-size:.85rem;">
+    </div>
+  </div>
+
+  <div class="colecoes-cards">
+    {% for c in colecoes %}
+    <div class="colecao-card linha-colecao" data-busca="{{ c.nome }} {{ c.categoria or '' }} {{ c.descricao or '' }}">
+      <div class="cc-topo">
+        <b class="cc-nome">{{ c.nome }}</b>
+        <span class="cc-pts">{{ c.points }} pts</span>
+      </div>
+      <p class="cc-cat">{{ c.categoria or "—" }}</p>
+      <p class="cc-desc">{{ (c.descricao or "")[:140] }}</p>
+      <div class="cc-acoes">
+        <button onclick="alternarDocs(this, '{{ c.nome | e }}')"
+                data-aberto="0"
+                title="documentos da coleção (nomes, pedaços, prévia)">📄 documentos</button>
+        <button hx-post="/hx/enriquecer/{{ c.nome }}" hx-target="#executando" hx-swap="afterbegin"
+                title="a LLM re-lê amostras e regenera área/categoria/descrição">✨ enriquecer</button>
+        <button type="button" onclick="snapshotColecao('{{ c.nome | e }}', this)"
+                title="fotografa id+vetor+payload da coleção agora (restaurável no cartão de snapshots)">📸 snapshot</button>
+        <button type="button" onclick="higienizarColecao('{{ c.nome | e }}', this)"
+                title="limpeza determinística: frases reconstituídas, ruído e duplicados fora, re-embed no mesmo id">🧹 higienizar</button>
+        <button class="perigo" type="button" onclick="apagarColecao('{{ c.nome | e }}', this)"
+                title="apaga a coleção inteira do Qdrant E do catálogo (job com log ao vivo — o card sai da tela ao concluir)">🗑 apagar</button>
+      </div>
+      {# ACCORDION INLINE: os documentos abrem DENTRO do card (o drawer
+         fixo quebrava a tela e o fechar não funcionava) — lazy: só baixa
+         a lista no 1º clique; clicar de novo fecha. #}
+      <div class="docs-slot" id="docs-{{ c.nome }}" hidden></div>
+    </div>
+    {% else %}
+    <p class="mut">nenhuma coleção ainda.</p>
+    {% endfor %}
+  </div>
 </section>
 
 <details class="cartao detalhe-cab" data-painel="sim" id="manutencao-cartao">
