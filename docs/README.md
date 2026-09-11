@@ -1,4 +1,4 @@
-# Documentação do RagAroy — índice e mapa
+# Documentação do RagChat — índice e mapa
 
 > ONDE ESTÁ O QUÊ (uma página, sem caça ao tesouro).
 
@@ -13,7 +13,12 @@
 | **Mudar o COMPORTAMENTO da LLM** | `../core/specs/*.md` (índice abaixo) |
 | **Protótipos de UI antigos** | `historico/` (layouts e premissas de fases passadas) |
 
-## Regra das três camadas de documentação
+> As análises abaixo foram escritas para o rag-llama (RagAroy) e
+> **herdadas pelo fork** — seguem válidas para o núcleo RAG/chat, que não
+> mudou. O que o fork removeu (mídia, estúdio, voz) não aparece mais
+> nelas quando relevante.
+
+## Regra das três camadas de documentações
 
 1. **README** = como USAR (instalação, comandos, endpoints).
 2. **AGENTS.md** = como MODIFICAR (memória de curto prazo do desenvolvedor;
@@ -37,17 +42,19 @@ prompt no código). Exige restart da API (lru_cache) ou `POST /api/specs/reload`
 | `roteador.md` | modo Auto: decidir base/web/livre |
 | `reformulacao.md` | reescrever a pergunta com histórico p/ a busca |
 | `ingestao.md` / `categorizacao.md` | pipeline e classificação de arquivos |
-| `limpeza_texto.md` | regras de higienização de prosa |
 | `seed.md` | criar coleção por assunto (web → base) |
 | `base_conhecimento.md` | construir base curada em 5 passos |
 | `edicao_documentos.md` / `exibicao.md` | editar chunks / exibir respostas |
 | `ferramentas.md` | agente ReAct com MCP (portão de aprovação) |
-| `midia_prompt.md` / `midia_critica.md` | pipeline de prompts do estúdio |
 | `destrinchar.md` / `analise_colecoes.md` / `agrupamento.md` | manutenção de coleções |
 | `modelo_dados.md` | schema dos payloads no Qdrant |
 | `pesquisa_planner.md` / `evidencia.md` / `sintese.md` | pesquisa profunda F4: plano, claims, síntese citada |
 | `rotulo_cluster.md` | rótulo de grupos no modo Revisão |
-| `pesquisa_web.md` | busca web do modo Auto |
+| `pesquisa_web.md` / `busca_neutra.md` | busca web (modo Auto e seed) |
+| `analise_codigo.md` / `arquivo_codigo.md` | ler e ARQUIVAR código na conversa (painel 📄) |
+| `painel_conversa.md` | agrupar os arquivos das respostas no painel 📄 |
+| `prompt_melhoria.md` | ✨ melhorar o prompt digitado antes de enviar |
+| `lembrete_final.md` | lembrete fixo que fecha respostas longas |
 
 ## Por que a documentação ficou difícil (histórico honesto)
 

@@ -1,16 +1,17 @@
-﻿# ═══════════════════════════════════════════════════════════════
-# RagAroy — instalação em UM comando (DevOps)
+# ═══════════════════════════════════════════════════════════════
+# RagChat — instalação em UM comando (DevOps)
 # Uso: powershell -File setup.ps1
 #      powershell -File setup.ps1 -Modelos chat,embed   (baixa modelos)
 #      powershell -File setup.ps1 -Modelos tudo
 # ═══════════════════════════════════════════════════════════════
-# Sobe: Qdrant + RabbitMQ (management) + Redis + API (container).
+# Sobe: API (:8001) + sandbox. O QDRANT não sobe aqui — o fork usa a
+# instância do rag-llama que já roda no host (:6333).
 # Os MODELOS rodam no host: python servicos_llm.py (llama-server GPU).
 param([string]$Modelos = "")
 $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath $PSScriptRoot
 
-Write-Output "== RagAroy setup =="
+Write-Output "== RagChat setup =="
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "Docker nao encontrado — instale o Docker Desktop primeiro."
@@ -45,7 +46,7 @@ $ok = $false
 foreach ($i in 1..30) {
     Start-Sleep 4
     try {
-        $r = Invoke-WebRequest -Uri "http://localhost:8000/api/status" -UseBasicParsing -TimeoutSec 4
+        $r = Invoke-WebRequest -Uri "http://localhost:8001/api/status" -UseBasicParsing -TimeoutSec 4
         if ($r.StatusCode -eq 200) { $ok = $true; break }
     } catch {}
     Write-Host -NoNewline "."
@@ -60,9 +61,9 @@ if ($Modelos) {
     & $vp -X utf8 scripts\baixar_modelos.py --tipos $Modelos
 }
 
-Write-Output "== RagAroy no ar =="
-Write-Output "   app           : http://localhost:8000  (ou https://<sub>.<dominio>)"
-Write-Output "   qdrant        : http://localhost:6333/dashboard"
+Write-Output "== RagChat no ar =="
+Write-Output "   app           : http://localhost:8001  (ou https://<sub>.<dominio>)"
+Write-Output "   qdrant        : http://localhost:6333/dashboard  (instancia do rag-llama — externa ao fork)"
 Write-Output ""
 Write-Output "   MODELOS (host): python servicos_llm.py  <- chat/embedding para o container usar"
-Write-Output "   Estudio/troca de modelo: modo host (python -m uvicorn api.app:app --host 0.0.0.0 --port 8000)"
+Write-Output "   Troca de modelo: modo host (python -m uvicorn api.app:app --host 0.0.0.0 --port 8001)"

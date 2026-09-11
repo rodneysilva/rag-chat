@@ -58,23 +58,6 @@ FIELDS = {
                       "deepseek,openai,anthropic…; também auto-descobertos"
                       " por PROV_*_BASE_URL)", "str"),
     "HF_TOKEN":       ("Serviços", "Token do HuggingFace (datasets privados)", "secret"),
-    "ESTUDIO_PAUSAR_CHAT": ("Estúdio · memória",
-                            "Pausar o chat (:8090) durante geração de mídia "
-                            "(1=sim; liberar VRAM p/ difusão; volta sozinho ao fim)", "int"),
-    "ESTUDIO_VRAM_ASSENTAMENTO_S": ("Estúdio · memória",
-                                    "Segundos de espera fixa após derrubar/erguer "
-                                    "serviço (a VRAM libera sozinha; o app não mede)", "int"),
-    "ESTUDIO_RESTORE_TENTATIVAS": ("Estúdio · memória",
-                                   "Tentativas de reerguer o chat ao fim da geração", "int"),
-    "ESTUDIO_PAUSAR_EMBED": ("Estúdio · memória",
-                             "Pausar o embedding (:8081) também em geração LEVE "
-                             "(0=padrão: vídeo pausa sempre, t2i/whisper convive; "
-                             "1=pausa em toda geração — religa com prioridade ao fim)", "int"),
-    "GPU_MODO": ("GPU · exclusividade",
-                 "Uso da GPU: 'todos' (aberta a LLMs E difusão/whisper) ou "
-                 "'somente_llms' (só os llama-servers; estúdio/difusão/whisper "
-                 "recusados com erro claro). Controlável pelo badge 🎮 do topo.",
-                 "str"),
     "CHUNK_SIZE":     ("Aplicação", "Tamanho do pedaço (chunk)", "int"),
     "CHUNK_OVERLAP":  ("Aplicação", "Sobreposição entre pedaços", "int"),
     "TOP_K":          ("Aplicação", "Documentos recuperados (top-k)", "int"),
@@ -126,11 +109,10 @@ AUTH_SECRET = ""
 AUTH_ADMIN_USER = ""
 AUTH_ADMIN_PASS = ""
 LLAMA_BIN = ""      # binário do llama-server (servir GGUF)
-SD_CLI = ""         # binário do sd-cli (difusão)
-WHISPER_CLI = ""    # binário do whisper-cli (transcrição)
-ESTUDIO_PAUSAR_CHAT = 1
-ESTUDIO_VRAM_ASSENTAMENTO_S = 6
-ESTUDIO_RESTORE_TENTATIVAS = 3
+# Espera fixa (s) após derrubar/erguer um llama-server na troca de modelo:
+# a VRAM libera sozinha; o app não mede — só espera (era ESTUDIO_*, herdado
+# do fork de mídia; aqui só a troca de modelo de chat a usa)
+VRAM_ASSENTAMENTO_S = 6
 CHUNK_SIZE = 0
 CHUNK_OVERLAP = 0
 TOP_K = 0
@@ -197,9 +179,8 @@ def reload():
     global COLLECTION, SERPER_API_KEY, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
     global SCORE_MIN, TEMPERATURE, PROMPT_SYSTEM, SCORE_CHUNK_MIN
     global SCORE_DIRETO, SCORE_FRACO
-    global ESTUDIO_PAUSAR_CHAT, ESTUDIO_VRAM_ASSENTAMENTO_S, ESTUDIO_RESTORE_TENTATIVAS, ESTUDIO_PAUSAR_EMBED, GPU_MODO
     global AUTH_SECRET, AUTH_ADMIN_USER, AUTH_ADMIN_PASS
-    global LLAMA_BIN, SD_CLI, WHISPER_CLI
+    global LLAMA_BIN
     global MOCK_LLM, RERANKER
     serper_ambiente = os.environ.get("SERPER_API_KEY", "")  # env real tem prioridade
     # em container: environment do compose VENCE o .env (endpoints de infra);
@@ -217,15 +198,6 @@ def reload():
     AUTH_ADMIN_PASS = os.getenv("AUTH_ADMIN_PASS", "")
     # binários locais (caminhos da máquina — ajuste no .env se precisar)
     LLAMA_BIN = os.getenv("LLAMA_BIN", r"<dir-llama.cpp>\llama-server.exe")
-    SD_CLI = os.getenv("SD_CLI", r"<dir-sdcli>\sd-cli.exe")
-    WHISPER_CLI = os.getenv("WHISPER_CLI", r"<dir-whisper>\whisper-cli.exe")
-    ESTUDIO_PAUSAR_CHAT = _bool_env("ESTUDIO_PAUSAR_CHAT", True)
-    ESTUDIO_VRAM_ASSENTAMENTO_S = int(os.getenv("ESTUDIO_VRAM_ASSENTAMENTO_S", "6"))
-    ESTUDIO_RESTORE_TENTATIVAS = int(os.getenv("ESTUDIO_RESTORE_TENTATIVAS", "3"))
-    ESTUDIO_PAUSAR_EMBED = _bool_env("ESTUDIO_PAUSAR_EMBED", False)
-    GPU_MODO = os.getenv("GPU_MODO", "todos").strip() or "todos"
-    if GPU_MODO not in ("todos", "somente_llms"):
-        GPU_MODO = "todos"
     CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "2000"))
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "400"))
     TOP_K = int(os.getenv("TOP_K", "4"))
@@ -256,11 +228,6 @@ def as_dict():
         "COLLECTION": COLLECTION,
         "SERPER_API_KEY": SERPER_API_KEY,
         "HF_TOKEN": os.getenv("HF_TOKEN", ""),
-        "ESTUDIO_PAUSAR_CHAT": int(ESTUDIO_PAUSAR_CHAT),
-        "ESTUDIO_VRAM_ASSENTAMENTO_S": ESTUDIO_VRAM_ASSENTAMENTO_S,
-        "ESTUDIO_RESTORE_TENTATIVAS": ESTUDIO_RESTORE_TENTATIVAS,
-        "ESTUDIO_PAUSAR_EMBED": int(ESTUDIO_PAUSAR_EMBED),
-        "GPU_MODO": GPU_MODO,
         "CHUNK_SIZE": CHUNK_SIZE,
         "CHUNK_OVERLAP": CHUNK_OVERLAP,
         "TOP_K": TOP_K,

@@ -65,11 +65,11 @@ extensão da linguagem); sem pistas cai em `bloco.N.ext` — nunca genérico.
 - botão ⤢ alterna largo (`min(46rem, 62vw)`) ↔ padrão (21rem).
 - a borda esquerda ARRASTA para redimensionar (280px … 80vw).
 
-## Progresso multimodal
+## Progresso dos jobs
 
-Jobs de mídia mostram **barra de progresso REAL** (% do motor: sd-cli /
-whisper, parseado no core) + etapa + ETA (~Ns restantes) quando o motor
-reporta; sem %, o log linha a linha continua sendo o progresso.
+Jobs de fila (ingestão, seed, manutenção, pesquisa) mostram **barra de
+progresso REAL** (parseada no core) + etapa + ETA (~Ns restantes) quando
+o job reporta; sem %, o log linha a linha continua sendo o progresso.
 
 ## Raciocínio transparente
 

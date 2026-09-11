@@ -39,7 +39,6 @@ datasets/transformers/
 
 # repos oficiais clonados pelo seed (datasets/seed/*_repo/)
 datasets/seed/*_repo/
-modelos_voz/
 
 # cache do HuggingFace do reranker (volume do compose - bge-reranker-base ~1,1 GB)
 hf_cache/

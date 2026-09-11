@@ -30,7 +30,7 @@ def _env_credenciais():
 def _api_viva():
     import httpx
     try:
-        return httpx.get("http://127.0.0.1:8000/api/status", timeout=3).status_code == 200
+        return httpx.get("http://127.0.0.1:8001/api/status", timeout=3).status_code == 200
     except Exception:
         return False
 
@@ -48,11 +48,11 @@ def pagina():
         b = p.chromium.launch(executable_path=str(sorted(CHROME_CANDIDATOS)[-1]))
         ctx = b.new_context()
         pg = ctx.new_page()
-        pg.goto("http://127.0.0.1:8000/entrar")
+        pg.goto("http://127.0.0.1:8001/entrar")
         pg.fill('input[name="user"]', env.get("AUTH_ADMIN_USER", "admin").strip())
         pg.fill('input[name="senha"]', env.get("AUTH_ADMIN_PASS", "").strip())
         pg.click('button[type="submit"]')
-        pg.wait_for_url("http://127.0.0.1:8000/")
+        pg.wait_for_url("http://127.0.0.1:8001/")
         pg.wait_for_selector("#pergunta")
         yield pg
         b.close()
@@ -108,7 +108,7 @@ class TestHistorico:
         corpo = pagina.inner_text("#palco")
         assert all(m in corpo for m in marcadores)
         sid = next((c["value"] for c in pagina.context.cookies()
-                    if c["name"] == "rag_sessao"), None)
+                    if c["name"] == "rc_sessao"), None)
         assert sid
         d = json.loads((Path("sessions") / f"{sid}.json").read_text(encoding="utf-8"))
         conteudos = [m["content"] for m in d["raw"]]

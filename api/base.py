@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
-from core import agent, auth, bussola, catalog, config, contadores, executor, grafo, hf, limpeza, midia, modalidades, modelos, mcp_registry, rag, rerank, sessoes, sessions, tarefas, voz
+from core import agent, auth, bussola, catalog, config, contadores, executor, grafo, hf, limpeza, modelos, mcp_registry, rag, rerank, sessions
 from core import historico, resolucoes, telemetria
 from core.linguagens import LINGUAGENS
 from core.auto import responde_auto, _web_aprofundado
@@ -79,16 +79,11 @@ __all__ = [
     "grafo",
     "hf",
     "limpeza",
-    "midia",
-    "modalidades",
     "modelos",
     "mcp_registry",
     "rag",
     "rerank",
-    "sessoes",
     "sessions",
-    "tarefas",
-    "voz",
     "historico",
     "resolucoes",
     "telemetria",
@@ -119,7 +114,6 @@ __all__ = [
     "_limpar_tentativas",
     "_cookie",
     "_exigir_admin",
-    "_exigir_host",
     "IngestIn",
     "HigienizarIn",
     "VarreduraIn",
@@ -134,10 +128,6 @@ __all__ = [
     "SettingsIn",
     "_ENV_PROIBIDAS",
     "_RE_ENV_OK",
-    "MidiaPromptsIn",
-    "TarefaIn",
-    "ContextoIn",
-    "SessaoEstudioIn",
     "COLECOES_SISTEMA",
     "BASE_UNIFICADA",
     "_check",
@@ -151,7 +141,6 @@ __all__ = [
     "_paginas_ctx",
     "_sessao_id",
     "_msgs_da_sessao",
-    "_iniciar_midia",
     "SandboxIn",
     "_proxy_app_api",
     "_pag_fora",
@@ -160,13 +149,9 @@ __all__ = [
     "_palco_response",
     "_campos_config",
     "_DICAS_CAMPO",
-    "_finalizar_midia_fundo",
     "_RE_ANSI",
     "_RE_BARRA",
     "_RE_PCT",
-    "_TAREFA_CHAT",
-    "_limpar_job_ativo",
-    "_registrar_midia_sessao",
     "_linhas_visual",
     "_scroll_todos",
     "trocos_label",
@@ -198,39 +183,16 @@ __all__ = [
     "_higieniza",
     "_limpeza",
     "_sbx",
-    "_midia",
-    "MidiaAnalisarIn",
-    "_midia_pagina_base",
-    "MidiaEnviarIn",
-    "_midia_local_agente",
-    "_sessao_estudio_do_dono",
     "_LOGS_DIR",
     "_LOGS_FONTES",
     "LOG_TAIL_LINHAS",
     "_mais_recente",
-    "GpuModoIn",
-    "_GPU_BLOQUEADAS",
-    "_GPU_BLOQ_TIPOS",
-    "_checar_gpu_modo",
     "_sanear_caminho",
     "ZipIn",
-    "MidiaZipIn",
-    "VozFalarIn",
-    "VisaoIn",
     "_EXTS_ANEXO",
     "ANEXO_MAX_CHARS",
     "_extrair_anexo",
-    "AssistenteIn",
-    "UPLOAD_MIDIA_MAX",
     "_erro_modelo",
-    "_esperar_chats",
-    "_LIMITES_PARAMS",
-    "_sanear_params",
-    "_rodar_tarefa",
-    "_resolver_arquivo",
-    "_MIME",
-    "_VIDEO_MIME",
-    "_puxar_do_agente",
     "_seed",
     "_varredura",
     "_bases_consultadas",
@@ -392,7 +354,7 @@ _ROTAS_PUBLICAS = {"/api/auth/login", "/api/auth/register", "/api/status"}
 
 # cookie da sessão (httpOnly): <img>/<video> não mandam header Authorization
 # — com o cookie a mídia autentica sozinha e o token sai da query string
-COOKIE_TOKEN = "ragaroy_token"
+COOKIE_TOKEN = "ragchat_token"
 
 
 # rate limit do login: {chave ip|usuário: [timestamps das tentativas]}
@@ -501,19 +463,6 @@ def _exigir_admin(request: Request) -> str:
     return user
 
 
-def _exigir_host(recurso: str) -> None:
-    """Estúdio/visão/troca de modelo gerenciam PROCESSOS e GPU do HOST
-    (llama-server, sd-cli, whisper). Com a API em container isso não é
-    possível — o erro diz exatamente o que fazer."""
-    if config.EM_CONTAINER:
-        raise HTTPException(status_code=400,
-                            detail=f"'{recurso}' precisa dos binários de GPU do "
-                                   "host e a API está em container. Rode o modo "
-                                   "host (python -m uvicorn api.app:app) para o "
-                                   "Estúdio, ou suba os modelos no host com "
-                                   "servicos_llm.py — chat/ingestão/coleções "
-                                   "funcionam normalmente no container.")
-
 
 class IngestIn(BaseModel):
     folder: str
@@ -548,7 +497,6 @@ class QueryIn(BaseModel):
     aprovacoes_sessao: dict | None = None  # {ferramenta: "sessao"} — não perguntar mais
     model: str | None = None  # modelo de conversa solicitado (troca se diferente)
     provider: str | None = None  # sempre enviado junto (hoje: llama-server)
-    anexo_imagem: str | None = None  # mídia do painel incluída no contexto (visão descreve)
     job: bool = False  # True → roda em 2º plano e devolve {job} (webui: logs em tempo real, imune ao timeout do proxy — mata o 524)
 
 
@@ -604,41 +552,10 @@ class SettingsIn(BaseModel):
 _ENV_PROIBIDAS = {"AUTH_SECRET", "AUTH_ADMIN_USER", "AUTH_ADMIN_PASS",
                   "LLM_BASE_URL", "LLM_MODEL", "EMBED_BASE_URL", "EMBED_MODEL",
                   "QDRANT_URL", "RAGAROY_CONTAINER", "MODELS_DIR",
-                  "LLAMA_BIN", "SD_CLI", "WHISPER_CLI", "SERPER_API_KEY"}
+                  "LLAMA_BIN", "SERPER_API_KEY"}
 
 
 _RE_ENV_OK = re.compile(r"^[A-Z][A-Z0-9_]{1,40}$")
-
-
-class MidiaPromptsIn(BaseModel):
-    ideia: str  # a ideia em português; a LLM gera e critica as variações
-    tipo: str = "imagem"  # "imagem" | "video" (dicas de movimento no vídeo)
-    modelo: str | None = None  # só informativo na fase de prompts
-
-
-class TarefaIn(BaseModel):
-    """Dispara UMA tarefa do estúdio (modalidade) em segundo plano."""
-    modalidade: str  # t2i|t2v|i2v|i2t|v2t|a2t|a2v (chat/dev seguem no /api/query)
-    sessao: str | None = None  # sessão do chat que disparou (fica ocupada)
-    arquivo: str | None = None  # referência (i2v/a2t/v2t…): caminho ou nome
-    arquivo_b64: str | None = None  # em container: CONTEÚDO da referência —
-    # o host não vê o disco da VPS; o agente grava em saidas/entrada/ e usa
-    modelo: str | None = None  # modelo de conversa esperado (409 se divergente)
-    texto: str = ""  # prompt/pergunta/texto de entrada
-    params: dict = {}  # largura/altura/seed/frames/pergunta… por modalidade
-
-
-class ContextoIn(BaseModel):
-    """Inclui UMA mídia no contexto do RAG (descreve → embeda → indexa)."""
-    arquivo: str
-    tipo: str  # "imagem" | "video" | "audio"
-    prompt: str = ""  # pergunta opcional p/ guiar a descrição (i2t)
-    sessao: str | None = None
-
-
-class SessaoEstudioIn(BaseModel):
-    """Cria/renomeia UMA sessão do estúdio (agrupa as mídias geradas)."""
-    nome: str
 
 
 # Coleções de SISTEMA: funcionam por dentro mas não aparecem na webui
@@ -678,7 +595,7 @@ TEMPLATES.env.filters["strftime"] = _jinja_strftime
 TEMPLATES.env.filters["basename"] = lambda s: str(s).split("\\")[-1].split("/")[-1]
 
 
-SESSAO_COOKIE = "rag_sessao"
+SESSAO_COOKIE = "rc_sessao"
 
 
 def _versao_static(nome: str) -> str:
@@ -739,7 +656,7 @@ def _md_basico(texto: str) -> str:
     SEM buraco de XSS. Blocos de código viram CARD (figure) com copiar.
 
     v4 — fences que FUGIAM da regex e renderizavam como texto corrido:
-    CRLF (stream/whisper), linguagem seguida de espaço (```python ␊) e
+    CRLF (stream), linguagem seguida de espaço (```python ␊) e
     abertura com 4+ backticks. Tudo normalizado antes de extrair."""
     import html as _h
     import re as _re
@@ -843,7 +760,7 @@ def _msgs_da_sessao(sid: str | None, owner: str) -> list[dict]:
                     "content": m.get("content", "")}
             for campo in ("tokens", "modelo", "docs", "pensamentos",
                           "pensamentos_sintetizados", "cache",
-                          "midia", "segundos"):
+                          "segundos"):
                 if m.get(campo):
                     item[campo] = m[campo]
             if m.get("role") != "user":
@@ -852,162 +769,6 @@ def _msgs_da_sessao(sid: str | None, owner: str) -> list[dict]:
         return saida
     except Exception:
         return []
-
-
-def _iniciar_midia(request: Request, prompt: str, tipo: str, colecoes: list[str],
-                   referencia: str = "", modelo: str = "", duracao: str = ""):
-    """Geração de mídia pelo chat: cria a tarefa via a rota oficial (conjunto
-    de modelos sobe por trás) e devolve o partial do job.
-
-    Tipos: imagem (t2i) · video (t2v) · gif (t2v+gif) e as modalidades COM
-    REFERÊNCIA (📎 no painel): i2t (multimodal descreve/analisa), i2v (a
-    imagem anexa vira o 1º quadro do vídeo) e i2g (idem, em GIF). O modelo
-    do combobox vale para imagem (Flux) e vídeo (Wan2.1/2.2).
-
-    DURAÇÃO (`duracao` em segundos, seletor do composer — pedido do dono):
-    o Wan gera a ~16 fps → frames = s×16+1 (2s=33 · 3s=49 · 5s=81 ·
-    8s=129; spec core/specs/midia_duracao.md). GIF segue 17 frames (loop).
-
-    HISTÓRIA da sessão (pedido: "usar o contexto para imagens/vídeos —
-    contar a história de cada sessão"): as últimas trocas da conversa
-    viajam como continuidade narrativa no prompt da difusão.
-    """
-    _COM_REF = {"i2t", "i2v", "i2g"}
-    if tipo in _COM_REF and not referencia:
-        return TEMPLATES.TemplateResponse(
-            request, "_job.html",
-            {"request": request, "kind": "erro", "job": "erro",
-             "rotulo": f"gerar {tipo}", "linhas": [], "running": False,
-             "erro": f"'{tipo}' precisa de uma imagem de referência — "
-                     "clique em 📎 incluir no contexto numa imagem do "
-                     "painel e tente de novo"})
-    # 🚫 NEGATIVE PROMPT no próprio pedido (pedido do dono): "negativo: X"
-    # no texto vira o -n da difusão (condiz com a solicitação); sem a
-    # cláusula vale o padrão do modelo. Spec core/specs/midia_duracao.md.
-    negativo = ""
-    m_neg = re.search(r"negativo\s*[:=]\s*(.+?)(?:\.$|$)", prompt,
-                      re.IGNORECASE | re.DOTALL)
-    if m_neg and tipo in ("imagem", "video", "gif", "i2v", "i2g"):
-        negativo = m_neg.group(1).strip()[:300]
-        prompt = re.sub(r"[,.;]?\s*negativo\s*[:=]\s*.+$", "", prompt,
-                        flags=re.IGNORECASE | re.DOTALL).strip(" ,.")
-    try:
-        ref_arquivo = _resolver_arquivo(Path(referencia).name) if referencia else None
-        mod = {"imagem": "t2i", "video": "t2v", "gif": "t2v",
-               "i2t": "i2t", "i2v": "i2v", "i2g": "i2v"}.get(tipo, "t2i")
-        params: dict = {}
-        if tipo in ("gif", "i2g"):
-            # ⏱️ duração do GIF (pedido do dono): o seletor manda os FRAMES
-            # (17/33/49 → ~1,5/3/4 s a 12 fps no loop — spec midia_duracao)
-            try:
-                frames_gif = int(duracao) if duracao.isdigit() else 17
-            except ValueError:
-                frames_gif = 17
-            params = {"gif": True, "frames": max(9, min(81, frames_gif)),
-                      "duracao_s": round(frames_gif / 12, 1)}
-        elif tipo in ("video", "i2v"):
-            # DURAÇÃO escolhida no composer → frames (16 fps; teto 8 s:
-            # tempo/VRAM de difusão cresce ~linear e o Wan mantém coerência
-            # em cena ÚNICA — acima disso degrade rápido)
-            try:
-                seg = max(2, min(8, int(float(duracao or "2"))))
-            except ValueError:
-                seg = 2
-            params["frames"] = seg * 16 + 1
-            params["duracao_s"] = seg
-        if tipo in ("imagem", "video", "i2v") and modelo:
-            params["modelo"] = modelo
-        if negativo:
-            params["negativo"] = negativo
-        if tipo == "i2t" and prompt:
-            params["pergunta"] = prompt   # pergunta ESPECÍFICA sobre a imagem
-        # 📖 HISTÓRIA da sessão → continuidade narrativa (pedido do dono):
-        # as últimas trocas compactadas viajam com o prompt da difusão para
-        # a cena CONTINUAR a conversa (mesma personagem/ambiente/enredo)
-        try:
-            _s = sessions.get_session(request.cookies.get(SESSAO_COOKIE)) or {}
-            _trocas = []
-            for m in (_s.get("raw") or [])[-6:]:
-                if not m.get("content"):
-                    continue
-                quem = "usuário" if m.get("role") == "user" else "assistente"
-                _trocas.append(f"{quem}: {str(m['content'])[:140].rstrip()}")
-            if _trocas:
-                params["historia"] = "\n".join(_trocas)[:600]
-        except Exception:
-            pass
-        # em CONTAINER a referência resolvida aqui (disco da VPS) não existe
-        # no host — o CONTEÚDO viaja em base64 e o agente grava em entrada/
-        ref_b64 = None
-        if ref_arquivo and config.EM_CONTAINER:
-            try:
-                import base64 as _b64
-                ref_b64 = _b64.b64encode(
-                    Path(ref_arquivo).read_bytes()).decode("ascii")
-            except Exception:
-                ref_b64 = None
-        rotulos = {"i2t": "analisar imagem (multimodal)",
-                   "i2v": "gerar vídeo (a partir da imagem anexa)",
-                   "i2g": "gerar gif (a partir da imagem anexa)"}
-        r = criar_tarefa(TarefaIn(modalidade=mod, texto=prompt, params=params,
-                                  arquivo=(Path(ref_arquivo).name
-                                           if ref_arquivo else (referencia or None)),
-                                  arquivo_b64=ref_b64),
-                         request)
-    except HTTPException as e:
-        detalhe = e.detail if isinstance(e.detail, str) else str(e.detail)
-        if "agente do host" in detalhe:
-            detalhe += ("\n\nComo resolver (a GPU está na SUA estação):\n"
-                        "1. Na estação: python -X utf8 -m api.agente_host (deixe rodando)\n"
-                        "2. Tunel Cloudflare: agente.<seu-dominio> → http://localhost:8010\n"
-                        "   (ingress do túnel local; reinicie o cloudflared)\n"
-                        "3. No .env da VPS: AGENTE_HOST_URL=https://agente.<seu-dominio>\n"
-                        "4. Na VPS: docker compose up -d --force-recreate api")
-        return TEMPLATES.TemplateResponse(
-            request, "_job.html",
-            {"request": request, "kind": "tarefa", "job": "erro",
-             "rotulo": "geração de mídia", "linhas": [], "running": False,
-             "erro": detalhe})
-    # 💾 SESSÃO: a solicitação de mídia FAZ PARTE da conversa (pedido do
-    # dono — "sessões multimodais não estão sendo salvas"). A pergunta é
-    # gravada AGORA; o RESULTADO entra via hx_job quando a tarefa conclui
-    # (_TAREFA_CHAT casa job↔sessão; memória da API).
-    stub = JSONResponse({})
-    sid = _sessao_id(request, stub, criar=True)
-    try:
-        anterior = sessions.get_session(sid) or {}
-        bruto = anterior.get("raw") or []
-        bruto.append({"role": "user", "content": prompt})
-        sessions.save_session(bruto, sid=sid, owner=anterior.get("owner", ""),
-                              titulo=None, modo="midia", colecoes=colecoes,
-                              aprovacoes=anterior.get("aprovacoes", {}), raw=bruto,
-                              job_ativo={"kind": "tarefa", "job": r["tarefa"],
-                                         "rotulo": rotulos.get(tipo, f"gerar {tipo}")})
-        _TAREFA_CHAT[r["tarefa"]] = {"sid": sid, "pergunta": prompt, "tipo": tipo}
-        # registra o resultado MESMO SEM polling da página (navegador
-        # fechou no meio da geração — a sessão não pode perder a mídia)
-        threading.Thread(target=_finalizar_midia_fundo,
-                         args=(r["tarefa"],), daemon=True).start()
-    except Exception as e:
-        print(f"⚠️ sessão multimodal (pergunta): {e}")
-    # BOLHA do usuário + card do job (partials ÚNICOS — sem a bolha a
-    # pergunta SUMIA ao pedir mídia; pedido do dono). Resposta única com
-    # o cookie da sessão criada no stub propagado. MODO OTIMISTA: o
-    # browser já mostrou a bolha (header X-Otimista) — vem SÓ o card.
-    _bolha = "" if request.headers.get("x-otimista") == "1" else \
-        TEMPLATES.get_template("_bolha_usuario.html").render(pergunta=prompt)
-    corpo = (_bolha
-             + TEMPLATES.get_template("_job.html").render(
-                 request=request, kind="tarefa", job=r["tarefa"],
-                 rotulo=rotulos.get(tipo, f"gerar {tipo}"),
-                 linhas=[], running=True))
-    resposta = HTMLResponse(corpo)
-    _sc = stub.headers.get("set-cookie", "")
-    if _sc.startswith(SESSAO_COOKIE + "="):
-        _sid = _sc.split("=", 1)[1].split(";", 1)[0]
-        resposta.set_cookie(SESSAO_COOKIE, _sid, max_age=30 * 86400,
-                            httponly=True, samesite="lax")
-    return resposta
 
 
 class SandboxIn(BaseModel):
@@ -1143,14 +904,7 @@ def _job_ativo_ctx(sid: str) -> dict:
         if ja.get("kind") == "chat":
             s = _query.status(ja["job"], 0, "")
         else:
-            s = tarefas.status(ja["job"], 0)
-            if s is None and config.EM_CONTAINER:
-                import httpx as _hx
-                rr = _hx.get(f"{modelos._agente_host()}/tarefas/status/{ja['job']}",
-                             params={"cursor": 0}, timeout=6,
-                             headers=modelos._agente_headers())
-                if rr.status_code == 200:
-                    s = rr.json()
+            s = None
     except Exception:
         s = None
     if not s or not s.get("running"):
@@ -1165,20 +919,10 @@ def _job_ativo_ctx(sid: str) -> dict:
             pass
         return {}
     linhas = _linhas_visual(s.get("lines") or [])
-    if ja.get("kind") == "chat":
-        return {"job_ativo": {"kind": "chat", "job": ja["job"]},
-                "job": ja["job"], "linhas": linhas, "running": True,
-                "parcial": s.get("parcial") or "",
-                "parcial_md": _md_basico(s.get("parcial") or "")}
-    return {"job_ativo": {"kind": "tarefa", "job": ja["job"]},
-            "kind": "tarefa", "job": ja["job"],
-            "rotulo": ja.get("rotulo") or "geração",
-            "linhas": linhas, "running": True,
-            "progresso": (round((s.get("progresso") or 0) * 100)
-                          if isinstance(s.get("progresso"), (int, float)) else None),
-            "etapa_atual": s.get("etapa"), "eta_s": s.get("eta_s"),
-            "erro": None, "resumo_texto": "", "segundos": None,
-            "preview_pid": None, "resultado_midia": None}
+    return {"job_ativo": {"kind": "chat", "job": ja["job"]},
+            "job": ja["job"], "linhas": linhas, "running": True,
+            "parcial": s.get("parcial") or "",
+            "parcial_md": _md_basico(s.get("parcial") or "")}
 
 
 def _palco_response(request: Request, sid: str | None, usuario: str):
@@ -1226,11 +970,6 @@ _DICAS_CAMPO = {
     "SERPER_API_KEY": "Chave do serper.dev (Google) usada na pesquisa aprofundada (modo Auto/Pesquisa/Seed). Sem chave cai no DuckDuckGo automaticamente.",
     "LLM_PROVIDERS": "Ids EXTRA de provedores externos, vírgula (glm,deepseek…). Na prática quase não precisa: o cadastro ☁️ do Sistema (PROV_*_BASE_URL) já auto-descobre.",
     "HF_TOKEN": "Token do HuggingFace: datasets PRIVADOS da sua conta e rate-limit maior. Cole aqui e salve — aplica na hora.",
-    "ESTUDIO_PAUSAR_CHAT": "1 = derruba o chat (:8090) durante geração de mídia para liberar VRAM e religa sozinho ao fim (recomendado em 8 GB). 0 arrisca OOM.",
-    "ESTUDIO_VRAM_ASSENTAMENTO_S": "Segundos de espera após erguer/derrubar servidor — a VRAM libera sozinha, o app não mede. 6 é o bom; suba só se der falta de memória.",
-    "ESTUDIO_RESTORE_TENTATIVAS": "Quantas vezes tentar reerguer o chat após a geração. 3 cobre; mais só atrasa o erro aparecer.",
-    "ESTUDIO_PAUSAR_EMBED": "0 = embedding convive com geração LEVE (t2i/whisper — recomendado); 1 = pausa o embedding em TODA geração (última opção).",
-    "GPU_MODO": "todos = LLMs e difusão/whisper; somente_llms = bloqueia mídia (403 claro) e deixa só chat/visão/embedding. Também no badge 🎮 do topo.",
     "CHUNK_SIZE": "Tamanho do pedaço ao INGERIR documento (caracteres). 900–1200 funciona bem; menor = trechos mais precisos, mais pedaços.",
     "CHUNK_OVERLAP": "Sobreposição entre pedaços para não cortar ideia no meio. ~10% do CHUNK_SIZE.",
     "TOP_K": "Quantos fragmentos buscar por consulta. 4–8; subir aumenta contexto e custo de tokens.",
@@ -1242,32 +981,6 @@ _DICAS_CAMPO = {
     "RERANKER": "1 = reordena os achados com cross-encoder local (precisão melhor, +~2 s por busca). 0 = desliga.",
     "RERANK_MODEL": "Modelo do reranker no HuggingFace. base = leve (1,1 GB); v2-m3 = melhor em PT (2,3 GB) — compare no bench antes de trocar.",
 }
-
-
-def _finalizar_midia_fundo(job: str) -> None:
-    """Observa a tarefa de mídia até o FIM (agente no container / registro
-    local) e grava o resultado na sessão do chat — mesmo que o navegador
-    feche antes de concluir (o registro anterior dependia do polling da
-    página). Desiste silenciosamente após 15 min."""
-    import time as _t
-    for _ in range(90):
-        _t.sleep(10)
-        s = None
-        try:
-            if config.EM_CONTAINER:
-                import httpx as _hx
-                rr = _hx.get(f"{modelos._agente_host()}/tarefas/status/{job}",
-                             params={"cursor": 0}, timeout=8,
-                             headers=modelos._agente_headers())
-                if rr.status_code == 200:
-                    s = rr.json()
-            else:
-                s = tarefas.status(job, 0)
-        except Exception:
-            s = None
-        if s and not s.get("running") and not s.get("error"):
-            _registrar_midia_sessao(job, s.get("result") or {})
-            return
 
 
 _RE_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -1284,63 +997,6 @@ _RE_BARRA = re.compile(
 
 
 _RE_PCT = re.compile(r"^\s*\d+/\d+|\s+\d+(\.\d+)?(MB|GB|ms|s)/s\s*$", re.I)
-
-
-# job de MÍDIA do chat ↔ sessão: o POST grava a pergunta; quando o job
-# conclui, o hx_job grava o RESULTADO como mensagem da conversa
-_TAREFA_CHAT: dict = {}
-
-
-def _limpar_job_ativo(job: str) -> None:
-    """Tarefa concluída: o job_ativo da sessão dona sai (o refresh volta a
-    mostrar só o histórico — o card já cumpriu seu papel)."""
-    try:
-        info = _TAREFA_CHAT.get(job) or {}
-        sid = info.get("sid")
-        if not sid:
-            return
-        an = sessions.get_session(sid) or {}
-        if (an.get("job_ativo") or {}).get("job") == job:
-            sessions.save_session(an.get("raw") or [], sid=sid,
-                                  owner=an.get("owner", ""),
-                                  aprovacoes=an.get("aprovacoes", {}),
-                                  raw=an.get("raw"), job_ativo=None)
-    except Exception:
-        pass
-
-
-def _registrar_midia_sessao(job: str, res: dict) -> None:
-    """Tarefa de mídia concluída → mensagem ASSISTENTE na sessão do chat
-    (mídia renderizável ou texto da análise multimodal). Idempotente: o
-    registro é consumido no 1º call."""
-    info = _TAREFA_CHAT.pop(job, None)
-    if not info:
-        return
-    try:
-        anterior = sessions.get_session(info["sid"]) or {}
-        bruto = anterior.get("raw") or []
-        seg = res.get("segundos")
-        if res.get("arquivo"):
-            bruto.append({
-                "role": "assistant",
-                "content": f"mídia gerada ({res.get('tipo')}): {res['arquivo']}",
-                "midia": {"tipo": res.get("tipo"), "arquivo": res["arquivo"]},
-                "segundos": seg, "modelo": res.get("modelo")})
-        elif (res.get("texto") or "").strip():
-            bruto.append({
-                "role": "assistant", "content": res["texto"],
-                "html": _md_basico(res["texto"]), "segundos": seg})
-        else:
-            return
-        sessions.save_session(bruto, sid=info["sid"],
-                              owner=anterior.get("owner", ""), titulo=None,
-                              modo=anterior.get("modo", ""),
-                              colecoes=anterior.get("colecoes", []),
-                              aprovacoes=anterior.get("aprovacoes", {}),
-                              raw=bruto)
-        print(f"💾 tarefa {job} registrada na sessão {info['sid'][:18]}…")
-    except Exception as e:
-        print(f"⚠️ sessão multimodal (resultado): {e}")
 
 
 def _linhas_visual(lines: list) -> list:
@@ -1393,14 +1049,12 @@ def trocos_label(n: int) -> str:
 def _jobs_ativos() -> dict[str, int]:
     """Jobs de fundo em andamento, por tipo ({ingestão: 2, seed: 1, …}).
     Trocar modelo/embedding no meio derruba a LLM que o job está usando —
-    chat em curso e tarefa do estúdio também contam (usavam a mesma LLM)."""
+    chat em curso também conta (usa a mesma LLM)."""
     ativos: dict[str, int] = {}
     for reg in TODOS_JOBS:  # uma lista única — novo tipo de job entra sozinho
         n = reg.ativos()
         if n:
             ativos[reg.rotulo] = n
-    if tarefas.estudio_ocupado():
-        ativos["estúdio"] = 1
     return ativos
 
 
@@ -1442,26 +1096,21 @@ _ATIVOS_CACHE = {"t": 0.0, "dados": None}
 
 def modelos_ativos() -> dict:
     """FONTE ÚNICA (SOLID) do que está NO AR AGORA — lida dos SERVIDORES
-    (nunca do .env, que envelhece após trocas na estação): chat :8090,
-    visão :8082, embedding :8081 + difusores disponíveis. Serve o topbar
-    (badge 🧠/👁), a página Sistema e o dashboard — um conceito, um lugar.
+    (nunca do .env, que envelhece após trocas na estação): chat :8090 e
+    embedding :8081. Serve o topbar (badge 🧠), a página Sistema e o
+    dashboard — um conceito, um lugar.
     CACHE 10 s (o badge consulta a cada troca de tipo; a 1ª chamada
     cruzava o túnel até o agente e a UI ficava "…" pendurado)."""
     agora = time.time()
     if _ATIVOS_CACHE["dados"] is not None and agora - _ATIVOS_CACHE["t"] < 10:
         return _ATIVOS_CACHE["dados"]
-    ativos = {"chat": None, "visao": None, "embed": None,
-              "difusores": [], "vram_mi": None}
+    ativos = {"chat": None, "embed": None, "vram_mi": None}
     try:
         ativos["chat"] = modelos.servido(modelos.CHAT_PORTA)
     except Exception:
         pass
     try:
         ativos["embed"] = bool(modelos.embedding_no_ar())
-    except Exception:
-        pass
-    try:
-        ativos["visao"] = modelos.servido(modelos.VL_PORTA)
     except Exception:
         pass
     try:
@@ -1472,20 +1121,6 @@ def modelos_ativos() -> dict:
             ativos["vram_mi"] = modelos._vram_uso_mi()
     except Exception:
         pass
-    for alias, alvo in modelos.REGISTRO.items():
-        if alvo[1] in ("video", "imagem") and Path(alvo[0]).exists():
-            ativos["difusores"].append(alias)
-    # 👁 multimodal EXTERNO disponível (mesma fonte única — SOLID): se um
-    # provedor tem modelo de visão, o Sistema/badge mostram como ativo
-    # possível mesmo sem a :8082 local subida
-    try:
-        from core import provedores as _prov
-        ativos["visao_externa"] = [
-            f"{p['id']}:{m['nome']}"
-            for p in _prov.listar() if p["externo"]
-            for m in p["modelos"] if m.get("visao")][:6]
-    except Exception:
-        ativos["visao_externa"] = []
     _ATIVOS_CACHE.update(t=agora, dados=ativos)
     return ativos
 
@@ -1653,244 +1288,12 @@ _limpeza = JobRegistry("lim", "limpeza")
 _sbx = JobRegistry("sbx", "sandbox")
 
 
-# ---------- 👁 Multimídia (análise multimodal como módulo próprio) ----------
-# Decisão (27/08): NÃO forkar o SwarmUI — aplicação standalone C#/.NET
-# focada em GERAÇÃO t2i via backends ComfyUI, sem análise (i2t) de
-# provedores, sem RAG/chat/MCP/Qdrant. A bancada própria já tem tudo
-# (legendar_imagem local+externo, upload, jobs com log); falta era o
-# LUGAR na UI. Ver AGENTS.md "Módulo Multimídia".
-_midia = JobRegistry("mid", "multimídia")
-
-
-class MidiaAnalisarIn(BaseModel):
-    """Análise multimodal num arquivo subido (/api/upload → saidas/entrada):
-    imagem → descrição/resposta com o modelo 👁 local (Qwen2.5-VL, pausa o
-    chat e restaura) OU externo (`prov:modelo` — glm-4.5v/gpt-5/claude/
-    gemini; GPU local intocada)."""
-    arquivo: str
-    pergunta: str = ""
-    modelo: str = ""
-
-
-def _midia_pagina_base(request: Request, s: str):
-    """👁 MÓDULO MULTIMÍDIA como CONVERSA ÚNICA (pedido do dono 27/08:
-    "manter histórico de sessões" + "ser apenas um chat único onde posso
-    alternar os modelos"): sidebar de sessões + composer com TODOS os
-    modelos (👁 análise local/cloud · 🎨 geradores c/ i2i · 🎬 vídeo/gif).
-    O TIPO do item deriva do modelo escolhido + anexo. O job ativo da
-    sessão volta anotado — o polling RETOMA ao voltar pra página."""
-    from core import midia_sessoes
-    ctx = _paginas_ctx(request, "midia")
-    owner = _usuario(request)
-    ctx["m_sessoes"] = midia_sessoes.listar(owner)
-    sessao = None
-    if s:
-        sessao = midia_sessoes.abrir(s, owner)
-    if sessao is None:
-        # 🔁 RETOMADA PRIMEIRO (pedido do dono 28/08: "fiz a solicitação,
-        # mudei de módulo, quando voltei PERDI — comportamento do chat e
-        # multimídia devem ser os MESMOS"): sessão com JOB EM CURSO tem
-        # prioridade sobre a nova — o envio em andamento volta ABERTO
-        # (card + polling; o executor nunca parou).
-        for _x in ctx["m_sessoes"]:
-            if _x.get("job_ativo"):
-                _cand = midia_sessoes.abrir(_x["id"], owner)
-                if not _cand:
-                    continue
-                # 💀 FANTASMA: job morto (restart da API derruba os jobs em
-                # memória) deixava job_ativo pendurado PARA SEMPRE — o
-                # /midia reabria a sessão velha toda vez (o "não está
-                # criando novas sessões" do dono). Expira na hora.
-                _jid = (_cand.get("job_ativo") or {}).get("job")
-                _vivo = False
-                if _jid:
-                    try:
-                        _st = _midia.status(_jid, 0, "")
-                        _vivo = bool(_st.get("running"))
-                    except Exception:
-                        _vivo = False
-                if not _vivo:
-                    midia_sessoes.limpar_job(_cand["id"])
-                    continue
-                sessao = _cand
-                break
-        # REGRA DO DONO (28/08, SOLID — MESMO CICLO do chat): SEM slug e
-        # sem job = sessão VIRTUAL (id vazio, NADA no disco — igual ao "/"
-        # do chat): a sessão só NASCE no 1º envio (midia_enviar cria);
-        # rascunhos vazias antigas não aparecem na lista (listar filtra).
-        # ⚠️ AJUSTE 03/09 (pedido: "perdeu todo o contexto"): a virtual só
-        # vale para quem NUNCA usou o módulo — quem JÁ tem sessões volta
-        # na ÚLTIMA delas (mesmo ciclo do chat, que restaura a última
-        # conversa). Nada de nascer vazio com histórico existente.
-        if sessao is None and ctx["m_sessoes"]:
-            sessao = midia_sessoes.abrir(ctx["m_sessoes"][0]["id"], owner)
-        if sessao is None:
-            sessao = {"id": "", "titulo": "", "itens": [],
-                      "job_ativo": None, "owner": owner}
-    ctx["m_sessao"] = sessao
-    # TODOS os modelos num select só, agrupados por CAPACIDADE — o dono
-    # alterna livremente entre as mensagens
-    grupos = [
-        {"rotulo": "👁 análise de imagem (local)", "cat": "visao", "modelos": []},
-        {"rotulo": "👁 análise de imagem (provedores)", "cat": "visao_ext", "modelos": []},
-        {"rotulo": "🎨 gerar imagem (Flux local — com anexo vira MELHORIA i2i)", "cat": "imagem", "modelos": []},
-        {"rotulo": "🎨 gerar imagem (provedores)", "cat": "imagem_ext", "modelos": []},
-        {"rotulo": "🎬 vídeo/gif (Wan local)", "cat": "video", "modelos": []},
-    ]
-    try:
-        for m in modelos.listar():
-            cat = m.get("categoria")
-            if cat == "visao":
-                grupos[0]["modelos"].append(
-                    {"id": m["nome"], "nome": m["nome"],
-                     "info": "GPU da estação (pausa o chat e restaura)"})
-            elif cat == "imagem":
-                grupos[2]["modelos"].append(
-                    {"id": m["nome"], "nome": f"{m['nome']}"
-                     + (f" · {m['gb']}GB" if m.get("gb") else ""),
-                     "info": "com anexo = i2i (melhoria, força 0.65)"})
-            elif cat == "video":
-                grupos[4]["modelos"].append(
-                    {"id": m["nome"], "nome": m["nome"],
-                     "info": "cena única 2–8 s (16 fps); gif = 17 frames"})
-    except Exception:
-        pass
-    if not grupos[0]["modelos"]:
-        grupos[0]["modelos"].append({"id": "", "nome": "Qwen2.5-VL (local)",
-                                     "info": "GPU da estação"})
-    try:
-        from core import provedores as _prov
-        cadastrados = set()
-        for p in _prov.listar():
-            cadastrados.add(p["id"])
-            for m in p.get("modelos", []):
-                if m.get("cat") == "visao":
-                    grupos[1]["modelos"].append({
-                        "id": f"{p['id']}:{m['nome']}",
-                        "nome": f"{m['nome']} · {p['nome']}",
-                        "info": (m.get("uso") or "")
-                                + (f" · ctx {m['ctx'] // 1000}k"
-                                   if m.get("ctx") else "")})
-                elif m.get("cat") == "imagem":
-                    grupos[3]["modelos"].append({
-                        "id": f"{p['id']}:{m['nome']}",
-                        "nome": f"{m['nome']} · {p['nome']}",
-                        "info": m.get("info", "") or f"via API {p['nome']}"})
-        for pid, c in _prov.CONHECIDOS.items():
-            if pid in cadastrados:
-                continue
-            for nome in c.get("visao", []):
-                grupos[1]["modelos"].append({
-                    "id": f"{pid}:{nome}", "nome": f"{nome} · {c['nome']}",
-                    "info": f"requer chave — /sistema?prov={pid}"})
-    except Exception:
-        pass
-    ctx["m_grupos"] = [g for g in grupos if g["modelos"]]
-    return TEMPLATES.TemplateResponse(request, "midia.html", ctx)
-
-
-class MidiaEnviarIn(BaseModel):
-    """UM envio no chat multimídia: o MODELO decide o que acontece —
-    visao(+anexo) = análise; gerador de imagem = t2i (com anexo = i2i
-    melhoria); gerador de vídeo = t2v/gif. A sessão guarda o histórico."""
-    sessao: str
-    prompt: str
-    modelo: str = ""
-    referencia: str = ""   # upload (/api/upload) — análise OU init do i2i
-    duracao: int = 3       # vídeo: segundos
-    gif: bool = False
-
-
-def _midia_local_agente(payload: dict, jid: str, mod: str,
-                           params_t: dict) -> dict:
-    """Geração LOCAL do MULTIMÍDIA com a API em CONTAINER: a GPU e os GGUFs
-    vivem na ESTAÇÃO — a tarefa viaja ao AGENTE do host (o mesmo motor do
-    chat), o log volta ao card em tempo real e o arquivo serve pela VPS
-    (pull-back na rota /api/midia). Bug real do dono 28/08: o caminho
-    direto procurava D:\\models no Linux da VPS e dizia 'modelos de vídeo
-    ausentes' com tudo lá na estação."""
-    import base64 as _b64
-    import httpx as _hx
-    from core.modelos import _agente_host, _agente_headers
-    b64 = None
-    if payload.get("referencia"):
-        b64 = _b64.b64encode(
-            Path(payload["referencia"]).read_bytes()).decode("ascii")
-    _midia.log(jid, "🖥️ GPU na estação — tarefa enviada ao AGENTE do host…",
-               etapa="modelo")
-    r = modelos._chamar_agente(
-        "/tarefas", {"modalidade": mod, "texto": payload["prompt"],
-                     "params": params_t,
-                     "arquivo": (payload.get("nome_ref") or None),
-                     "arquivo_b64": b64}, timeout=120)
-    tid = (r or {}).get("tarefa")
-    if not tid:
-        raise RuntimeError(f"agente não devolveu tarefa: {str(r)[:120]}")
-    _midia.log(jid, f"🧵 tarefa {tid} na estação — log abaixo em tempo real",
-               etapa="modelo")
-    cursor, falhas = 0, 0
-    while True:
-        time.sleep(2)
-        try:
-            s = _hx.get(f"{_agente_host()}/tarefas/status/{tid}",
-                        params={"cursor": cursor},
-                        headers=_agente_headers(), timeout=30).json()
-        except Exception as e:
-            falhas += 1
-            # TOLERÂNCIA REAL (bug do dono 29/08): durante o decode do VAE
-            # o sd-cli satura a estação e o túnel devolve corpo vazio/502
-            # por MINUTOS — a geração SEGUE na GPU. Desistir em 30 s matava
-            # o job com o vídeo a caminho (terminou 19 min depois lá).
-            if falhas in (5, 30, 90):
-                _midia.log(jid, f"⚠️ contato instável com a estação "
-                                f"({falhas} tentativa(s)) — a geração SEGUE "
-                                f"na GPU; reconectando…", etapa="agente")
-            if falhas > 150:  # ~5 min de silêncio CONTÍNUO: desiste de VER
-                raise RuntimeError(f"perdi contato com o agente: {str(e)[:120]}")
-            continue
-        falhas = 0
-        if "running" not in s:
-            # agente respondeu, mas não é status de tarefa (ex.: 404 pós-
-            # restart do agente) — erro claro em vez de resultado vazio
-            raise RuntimeError(str(s.get("detail") or s)[:200])
-        # progresso/ETA da tarefa na estação → registry do job (a barra
-        # vive no card da multimídia)
-        if s.get("progresso") is not None or s.get("etapa"):
-            _midia.progresso(jid, s.get("progresso"), s.get("etapa"))
-        for l in (s.get("lines") or []):
-            _midia.log(jid, str(l.get("msg") or l),
-                       etapa=(l.get("etapa") or "gerar"))
-        cursor += len(s.get("lines") or [])
-        if not s.get("running"):
-            if s.get("error"):
-                raise RuntimeError(str(s["error"])[:300])
-            res = s.get("result") or {}
-            return {"tipo": (res.get("tipo") or
-                             ("video" if mod == "t2v" else "imagem")),
-                    "arquivo": res.get("arquivo"), "pasta": res.get("pasta"),
-                    "prompt": payload["prompt"],
-                    "modelo": payload["modelo"],
-                    "segundos": res.get("segundos"),
-                    "frames": res.get("frames"),
-                    "referencia": payload.get("nome_ref")}
-
-
-def _sessao_estudio_do_dono(sid: str, request: Request) -> dict:
-    """Sessão do estúdio do usuário logado (ou 404) — isolamento por owner."""
-    s = sessoes.obter(sid)
-    dono = _usuario(request)
-    if not s or (s.get("owner") and s.get("owner") != dono):
-        raise HTTPException(status_code=404, detail=f"sessão '{sid}' não existe")
-    return s
-
-
 _LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
 _LOGS_FONTES = {
     "chat": lambda: _mais_recente("llama-chat-*.log"),
     "embed": lambda: (_LOGS_DIR / "llama-embed.log"),
-    "visao": lambda: (_LOGS_DIR / "llama-vl.log"),
     "api": lambda: (_LOGS_DIR / "api-8000.log"),
 }
 
@@ -1901,31 +1304,6 @@ LOG_TAIL_LINHAS = 120
 def _mais_recente(padrao: str) -> Path:
     candidatos = sorted(_LOGS_DIR.glob(padrao), key=lambda p: p.stat().st_mtime)
     return candidatos[-1] if candidatos else None
-
-
-class GpuModoIn(BaseModel):
-    modo: str  # "todos" | "somente_llms"
-
-
-# modalidades que usam a GPU FORA dos llama-servers (difusão sd-cli e
-# whisper-cli): bloqueadas quando a GPU está em 'somente_llms'
-_GPU_BLOQUEADAS = {"t2i", "t2v", "i2v", "a2v", "a2t", "v2t"}
-
-
-_GPU_BLOQ_TIPOS = {"audio", "video", "gif"}  # contexto de mídia usa whisper-cli
-
-
-def _checar_gpu_modo(mod: str | None = None, tipo: str | None = None) -> None:
-    """Política de GPU: em 'somente_llms', cargas fora dos llama-servers são
-    recusadas com erro claro (o operador escolheu reservar a GPU)."""
-    if config.GPU_MODO != "somente_llms":
-        return
-    if (mod and mod in _GPU_BLOQUEADAS) or (tipo and tipo in _GPU_BLOQ_TIPOS):
-        raise HTTPException(status_code=403,
-                            detail="GPU em modo 'somente LLMs' — esta operação "
-                                   "usa difusão/whisper. Altere o modo no badge "
-                                   "🎮 da barra do topo (ou em ⚙️ Configurações, "
-                                   "GPU_MODO)")
 
 
 def _sanear_caminho(nome: str) -> str:
@@ -1942,19 +1320,6 @@ class ZipIn(BaseModel):
     arquivos: list[dict]  # [{nome, conteudo}] — saiu da própria resposta do chat
 
 
-class MidiaZipIn(BaseModel):
-    arquivos: list[str]  # refs 'pasta\arquivo' (o mesmo formato da galeria)
-
-
-class VozFalarIn(BaseModel):
-    texto: str
-
-
-class VisaoIn(BaseModel):
-    arquivo: str  # caminho em saidas/entrada (veio do /api/upload)
-    pergunta: str | None = None  # opcional: pergunta específica sobre a imagem
-
-
 _EXTS_ANEXO = {".txt", ".md", ".mdx", ".rst", ".pdf"}
 
 
@@ -1969,216 +1334,14 @@ def _extrair_anexo(caminho: str) -> str:
     return Path(caminho).read_text(encoding="utf-8", errors="replace")
 
 
-class AssistenteIn(BaseModel):
-    ideia: str = ""            # ideia inicial (1ª rodada)
-    tipo: str = ""             # "imagem" | "video" quando já decidido
-    msgs: list[dict] = []      # [{role: user|assistant, content}] da entrevista
-
-
-UPLOAD_MIDIA_MAX = 200 * 1024 * 1024  # mídia de entrada (vídeos): 200 MB
-
-
 def _erro_modelo(modelo_pedido: str) -> HTTPException:
-    """409 informando o modelo ATUAL, pesquisado na API na hora (regra do
-    operador: estúdio ocupado não troca de modelo — apresenta o erro)."""
-    atual = modelos.servido(modelos.CHAT_PORTA)  # None = chat pausado
-    ocupado = tarefas.estudio_ocupado()
+    """409 informando o modelo ATUAL, pesquisado na API na hora."""
+    atual = modelos.servido(modelos.CHAT_PORTA)
     detalhe = (f"modelo divergente: a sessão pediu '{modelo_pedido}', mas o modelo "
                f"atual na :{modelos.CHAT_PORTA} é "
-               f"'{atual or 'nenhum (chat pausado pela tarefa em curso)'}'")
-    if ocupado:
-        detalhe += f" — estúdio ocupado com {ocupado['id']} ({ocupado['rotulo']})"
+               f"'{atual or 'nenhum (chat pausado)'}'")
     return HTTPException(status_code=409, detail=detalhe)
 
-
-def _esperar_chats(log, timeout_s: int = 60) -> bool:
-    """Espera as respostas do chat em andamento acabarem antes de pausar a
-    LLM (TOCTOU: a query validou 'estúdio livre' no início, mas a tarefa
-    pode chegar depois — derrubar o servidor no meio da resposta deixava o
-    job do chat com erro cru de conexão). True = drenou; False = timeout."""
-    for i in range(timeout_s):
-        em_curso = _query.ativos()
-        if not em_curso:
-            return True
-        if i == 0:
-            log(f"⏳ {em_curso} resposta(s) do chat em andamento — esperando "
-                "concluir para não cortar no meio (máx. 60 s)…", "pausar")
-        time.sleep(1)
-    return False
-
-
-# limites dos parâmetros numéricos por modalidade (o cliente não manda no
-# tamanho: largura=10 travava a difusão; clamp aqui protege)
-_LIMITES_PARAMS = {
-    "largura": (64, 1536), "altura": (64, 1536),
-    "frames": (9, 129), "seed": (0, 2**31 - 1),
-}
-
-
-def _sanear_params(p: dict) -> dict:
-    s = dict(p)
-    for k, (mn, mx) in _LIMITES_PARAMS.items():
-        if isinstance(s.get(k), (int, float)):
-            s[k] = int(max(mn, min(mx, s[k])))
-    for k in ("largura", "altura"):  # difusão treina em múltiplos de 16
-        if isinstance(s.get(k), int):
-            s[k] = max(64, round(s[k] / 16) * 16)
-    return s
-
-
-def _rodar_tarefa(tid: str, body: TarefaIn):
-    """Executa a modalidade numa thread: log/progresso → core.tarefas."""
-    import time as _t
-    t0 = _t.time()
-    mod, p = body.modalidade, _sanear_params(body.params or {})
-
-    def _log(msg, etapa=None):
-        tarefas.log(tid, msg, etapa)
-
-    def _prog(fracao):
-        tarefas.progresso(tid, fracao)
-
-    contadores.set_servico("estudio")  # prompts/crítica da geração contam aqui
-    # 🎛️ CONJUNTO por tarefa: garante os motores certos no ar ANTES de
-    # executar (troca = limpeza de VRAM; mesmo conjunto = cache quente)
-    try:
-        from core import conjuntos as _conjuntos
-        _conjuntos.garantir(mod, log=lambda m, g="modelo": _log(m, "modelo"))
-    except Exception as e:
-        _log(f"⚠️ conjunto de modelos: {str(e)[:140]} — seguindo com o que está no ar")
-    # 📖 HISTÓRIA da sessão: a difusão recebe a continuidade narrativa da
-    # conversa (mesma personagem/ambiente/enredo) — pedido do dono. Anexada
-    # como sufixo curto do prompt (bilíngue: umt5/t5xxl entendem PT)
-    _prompt = str(body.texto or "")
-    if p.get("historia") and mod in ("t2i", "t2v", "i2v"):
-        _prompt = (f"{_prompt}. Continuidade da cena desta conversa "
-                   f"(mantenha personagens/ambiente/enredo coerentes): "
-                   f"{str(p['historia'])[:400]}")
-        _log("📖 história da sessão anexada ao prompt (continuidade narrativa)",
-             "contexto")
-    if p.get("duracao_s"):
-        _log(f"⏱️ duração pedida: {p['duracao_s']}s ({p.get('frames')} frames "
-             "a 16 fps — spec midia_duracao)", "gerar")
-    estado = None
-    try:
-        if mod in ("t2i", "t2v", "i2v", "a2v"):  # difusão: pausa o chat e sobe o sd-cli
-            pesado = mod in ("t2v", "i2v", "a2v")  # vídeo: GPU 100% da difusão
-            _esperar_chats(_log)  # não corta respostas em andamento no meio
-            _log("⏸️ Pausando os servidores de LLM — a GPU é da difusão agora…",
-                 "pausar")
-            estado = midia.pausar_servicos(log=_log, pesado=pesado)
-        if mod == "t2i":
-            r = midia.gerar_imagem(_prompt, p.get("modelo"), p.get("largura", 1024),
-                                   p.get("altura", 1024), p.get("seed"),
-                                   negativo=p.get("negativo"),
-                                   log=_log, progresso=_prog)
-        elif mod in ("t2v", "i2v"):
-            r = midia.gerar_video(_prompt,
-                                  body.arquivo if mod == "i2v" else None,
-                                  p.get("frames", 33), p.get("largura", 480),
-                                  p.get("altura", 832), p.get("seed"),
-                                  gif=bool(p.get("gif")),  # F1b-3: mp4 → .gif
-                                  modelo=p.get("modelo"),  # Wan2.1/2.2 do combobox
-                                  negativo=p.get("negativo"),
-                                  log=_log, progresso=_prog)
-        elif mod == "i2t":
-            r = {"tipo": "texto",
-                 "texto": midia.legendar_imagem(body.arquivo,
-                                                body.texto or p.get("pergunta"),
-                                                log=_log)}
-        elif mod == "a2t":
-            r = midia.transcrever(body.arquivo, log=_log, progresso=_prog)
-        elif mod == "a2v":
-            r = midia.audio_para_video(body.arquivo,
-                                       p.get("frames", 33),
-                                       log=_log, progresso=_prog)
-        elif mod == "v2t":
-            r = midia.video_para_texto(body.arquivo, log=_log, progresso=_prog)
-        else:
-            raise RuntimeError(f"modalidade '{mod}' não executa tarefa de estúdio")
-        r.setdefault("segundos", round(_t.time() - t0))   # DURAÇÃO visível
-        # 📊 TELEMETRIA na VPS: a geração roda NO HOST (agente) e o evento
-        # era gravado só na telemetria da ESTAÇÃO — o dashboard de modelos
-        # da produção nunca via wan/flux. Em container, a API registra.
-        if config.EM_CONTAINER and r.get("modelo"):
-            try:
-                telemetria.evento(
-                    "geracao", f"🎬 {r['modelo']}: {r.get('tipo', 'mídia')} em "
-                    f"{r.get('segundos')}s", modelo=r["modelo"],
-                    tipo=r.get("tipo"), frames=r.get("frames"),
-                    segundos=r.get("segundos"))
-            except Exception:
-                pass
-        tarefas.concluir(tid, r)
-        if r.get("arquivo"):  # mídia gerada → fica ativa na sessão do estúdio
-            try:
-                sessoes.registrar(body.sessao or "s_principal",
-                                  {**r, "modalidade": mod})
-            except Exception as e:
-                print(f"⚠️ mídia não registrada na sessão: {e}")
-    except Exception as e:
-        print(f"❌ Erro na tarefa {tid} ({mod}): {e}")
-        tarefas.concluir(tid, erro=str(e))
-    finally:
-        if estado is not None:  # serviços de volta ao ar MESMO com erro
-            try:
-                midia.restaurar_servicos(estado, log=_log)
-            except Exception as e:
-                tarefas.log(tid, f"⚠️ Falha ao restaurar serviços: {e} — "
-                                "rode servicos_llm.py", "restaurar")
-
-
-def _resolver_arquivo(nome: str | None) -> str | None:
-    """Normaliza o arquivo de entrada: aceita caminho absoluto (upload),
-    'pasta\\arquivo' (preview da webui) ou nome seco (busca em saidas/entrada
-    e nas pastas de mídia). Devolve caminho absoluto ou None.
-
-    Caminhos absolutos só valem DENTRO do projeto (saidas/…) — o cliente não
-    escolhe arquivo arbitrário do host para descrever/indexar."""
-    if not nome:
-        return None
-    # refs vindas do navegador podem usar barra invertida (Windows); no
-    # Linux do container "\" é caractere de nome, NÃO separador — sem
-    # normalizar, "imagens\dev.png" não resolve e o zip vem 404
-    p = Path(str(nome).replace("\\", "/"))
-    if p.is_absolute():
-        try:
-            dentro = p.resolve().is_relative_to(midia.RAIZ.resolve())
-        except Exception:
-            dentro = False
-        return str(p) if dentro and p.is_file() else None
-    cand = [midia.RAIZ / "saidas" / nome,          # videos\t2v_x.webm (preview)
-            midia.ENTRADA / p.name,                # enviado via upload
-            *[d / p.name for d in midia.SAIDAS.values()]]  # nome seco
-    return next((str(c) for c in cand if c.is_file()), None)
-
-
-_MIME = {"imagem": "image/png", "audio": "audio/mpeg", "entrada": "application/octet-stream"}
-
-
-_VIDEO_MIME = {".mp4": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska"}
-
-
-def _puxar_do_agente(pasta_url: str, destino: Path) -> None:
-    """Baixa a mídia gerada no HOST (agente /arquivo) para o disco local —
-    silencioso: falha deixa o 404 original acontecer."""
-    import httpx as _hx
-    pasta_host = {"gif": "videos", "imagem": "imagens", "video": "videos",
-                  "audio": "audios"}.get(pasta_url, pasta_url)
-    nome = destino.name
-    try:
-        r = _hx.get(f"{modelos._agente_host()}/arquivo/{pasta_host}/{nome}",
-                    headers=modelos._agente_headers(), timeout=120,
-                    follow_redirects=True)  # túnel/CDN pode redirecionar
-        if r.status_code == 200 and r.content:
-            destino.parent.mkdir(parents=True, exist_ok=True)
-            destino.write_bytes(r.content)
-            print(f"📥 pull-back da mídia do host: {pasta_host}/{nome} "
-                  f"({len(r.content) // 1024} KB)")
-        else:
-            print(f"⚠️ pull-back {pasta_host}/{nome}: HTTP {r.status_code}")
-    except Exception as e:
-        print(f"⚠️ pull-back {pasta_host}/{nome}: {e}")
 
 
 _seed = JobRegistry("seed", "seed")
@@ -2341,21 +1504,6 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
         body.mcps = list(body.mcps or []) + [MCP_WEB]
         log("🌐 pedido de PESQUISA NA WEB detectado na mensagem — busca "
             "ativada (DuckDuckGo → Serper)", "mcp")
-    # sessão ocupada (tarefa de mídia em curso): espera — pode navegar, não executar
-    ocup = tarefas.sessao_ocupada(body.sessao)
-    if ocup:
-        raise HTTPException(status_code=423, detail={
-            "erro": f"a sessão está ocupada com a tarefa {ocup['id']} "
-                    f"({ocup['rotulo']}, {ocup['etapa']}) — aguarde concluir ou "
-                    "crie outra sessão", "tarefa": ocup})
-    # estúdio rodando difusão → o chat está PAUSADO: erro com o modelo atual (live)
-    est = tarefas.estudio_ocupado()
-    if est:
-        atual = modelos.servido(modelos.CHAT_PORTA)
-        raise HTTPException(status_code=409, detail={
-            "erro": f"o estúdio está gerando mídia ({est['rotulo']}, etapa "
-                    f"'{est['etapa']}') e o chat está pausado — modelo atual: "
-                    f"'{atual or 'nenhum (pausado)'}'", "tarefa": est})
     # escopo efetivo da consulta (TRI-ESTADO explícito — regra do dono):
     #   collections=[] (webui sem nada marcado) → SEM coleções: NÃO busca
     #   collections=None (CLI/API antiga)        → TODAS as visíveis
@@ -2379,32 +1527,6 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                       else "SEM coleções — sem busca na base (seleção vazia)"),
         "mensagem")
     # 👋 SAUDAÇÃO/PERGUNTA TRIVIAL (sem conteúdo recuperável): buscar contexto
-    # 📎 IMAGEM DO PAINEL incluída no contexto: a visão (Qwen2.5-VL, via
-    # agente no container) DESCREVE o arquivo e a descrição entra na
-    # pergunta — o RAG busca com ela, a LLM responde com ela. Falha na
-    # visão NÃO derruba a pergunta (segue sem a descrição, log claro).
-    if body.anexo_imagem:
-        log(f"📎 imagem anexada ({Path(body.anexo_imagem).name}) — "
-            "descrevendo com a visão (Qwen2.5-VL)…", "anexo")
-        try:
-            _cam = _resolver_arquivo(Path(body.anexo_imagem).name)
-            if not _cam:
-                raise ValueError("arquivo não encontrado em saidas/")
-            _vis = visao(VisaoIn(arquivo=_cam,
-                                 pergunta=("descreva a imagem de forma objetiva "
-                                           "e completa para servir de contexto")))
-            _desc = ((_vis or {}).get("descricao") or "").strip()
-            if _desc:
-                body.question = (body.question
-                                 + "\n\n[imagem anexada — conteúdo]: "
-                                 + _desc[:1500])
-                log(f"📎 descrição anexada ao contexto "
-                    f"({len(_desc)} caracteres)", "anexo")
-            else:
-                log("⚠️ visão devolveu vazia — seguindo sem a descrição", "anexo")
-        except Exception as e:
-            log(f"⚠️ visão indisponível ({str(e)[:120]}) — seguindo SEM a "
-                "descrição da imagem", "anexo")
     # para "oi tudo bem?" é desperdício puro (3k tokens e fragmentos
     # aleatórios anexados). Responde direto, com o porquê no log.
     # Detecção por TOKENS: mensagem curta cujas TODAS as palavras são de
@@ -2489,8 +1611,6 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
         _motivos_bussola.append("ferramentas MCP")
     if body.aprovacao:
         _motivos_bussola.append("aprovação pendente")
-    if body.anexo_imagem:
-        _motivos_bussola.append("imagem anexada")
     if body.estado_agente:
         _motivos_bussola.append("estado do agente")
     cacheavel = not _motivos_bussola

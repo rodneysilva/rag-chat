@@ -6,14 +6,13 @@
 
 <div class="pagina-conteudo">
 <h1>Chat</h1>
-<p class="descricao">converse, pergunte, peça mídia — o raciocínio aparece com log completo</p>
+<p class="descricao">converse, pergunte, pesquise — o raciocínio aparece com log completo</p>
 
 <div class="chat-shell">
 
-  {# ═══ SIDEBAR de conversas — PADRÃO ÚNICO com o Multimídia (pedido do
-       dono): cartão + botão PRIMÁRIO cheio no topo + itens título/contagem;
-       funcionalidades do chat seguem (apagar = job 2º plano com ⏳ auto-
-       polling, atual destacado, drawer overlay no celular) #}
+  {# ═══ SIDEBAR de conversas: cartão + botão PRIMÁRIO cheio no topo +
+       itens título/contagem (apagar = job 2º plano com ⏳ auto-polling,
+       atual destacado, drawer overlay no celular) #}
   <aside class="drawer-conversas" id="drawer-conversas">
     <button class="primario conv-nova" hx-post="/hx/conversa/nova" hx-target="#palco" hx-swap="innerHTML">
       &#10133; nova conversa
@@ -29,10 +28,6 @@
       <button type="button" class="btn-fontes" onclick="copiarConversa(this)"
               title="copia a conversa inteira (perguntas, respostas, tokens e raciocinio) em markdown">
         &#128203; copiar conversa</button>
-      <label class="toggle-voz" title="modo voz">
-        <input type="checkbox" id="modo-voz" onchange="marcaModoVoz()">
-        <span>🎙 ouvir respostas</span>
-      </label>
       <div style="flex:1"></div>
     </div>
 
@@ -49,12 +44,11 @@
                "enviando…" para sempre — 20 s sem resposta = falha visível,
                texto devolvido à caixa (antes: bolha eterna e reenvio duplicado) #}
             hx-request='{"timeout": 20000}'
-             hx-headers='{"X-Otimista": "1"}'
+             hx-headers='{"X-Otimista": "1"}'>
             {# ANTES era innerHTML: cada envio APAGAVA a troca anterior que
-               vivia em #pensando — o histórico sumia do chat #} hx-encoding="multipart/form-data">
-        {# ══ LINHA DE ENTRADA: [mic] [textarea flex] [enviar] — flexbox, alinhados ══ #}
+               vivia em #pensando — o histórico sumia do chat #}
+        {# ══ LINHA DE ENTRADA: [textarea flex] [enviar] — flexbox, alinhados ══ #}
         <div class="entrada-linha">
-          <button type="button" class="mic-btn" id="btn-mic" onclick="alternarMic()" title="ditar — para sozinho ao detectar silêncio (VAD) e envia">&#127908;</button>
           {# ⚠️ SEM required: o htmx valida o form DEPOIS do meu listener de
              submit (que limpa a caixa "no ato") — com required a textarea
              vazia fazia o htmx abortar com htmx:validation:halted
@@ -63,40 +57,21 @@
           <textarea id="pergunta" name="question" rows="1" placeholder="pergunte… (⏎ envia · ⇧⏎ linha · ↑ última)"></textarea>
           <button class="primario enviar-btn" type="submit" title="enviar">&#10148;</button>
         </div>
-        {# mídia anexada ao contexto (📎 no painel) — IMPLÍCITO: tudo que
-           está na conversa é contexto; só o hidden field existe #}
-        <input type="hidden" name="referencia" id="referencia" value="">
-        {# ══ CONTROLES — chat é TEXTO (pedido do dono 27/08: "geração de
-           imagem/vídeo fica só no Multimídia"): o tipo só distingue
-           conversa de ANÁLISE de imagem (i2t — retorno também é texto) ══ #}
+        {# ══ CONTROLES ══ #}
         <div class="controles-linha">
-          <select name="midia" id="sel-midia" title="tipo de resposta" onchange="midiaMudou()">
-            <option value="">📝 texto</option>
-            <option value="i2t">imagem → texto</option>
-          </select>
-          {# 📎 SUBIR IMAGEM: análise i2t com um modelo 👁 (a GERAÇÃO de
-             imagem/vídeo/gif vive no módulo 👁 Multimídia) #}
-          <input type="file" id="anexo-arquivo" accept="image/*" hidden onchange="anexoSubido(this)">
-          <button type="button" id="btn-anexo" class="acao-btn" hidden
-                  onclick="document.getElementById('anexo-arquivo').click()"
-                  title="subir uma imagem do seu computador para o multimodal analisar">📎 subir imagem</button>
-          <span class="chip-ref" id="chip-ref" hidden title="clique para remover a imagem anexada"></span>
-          {# 2º: MODELO — conversa (local + 🌐 provedores por categoria); no
-             i2t só os 👁 multimodais (a geração vive no módulo Multimídia) #}
-          <select name="model" id="sel-modelo" title="modelo (filtra pelo tipo de resposta)" onchange="modeloMudou(this)">
+          {# 1º: MODELO — conversa (local + 🌐 provedores por categoria) #}
+          <select name="model" id="sel-modelo" title="modelo de conversa" onchange="modeloMudou(this)">
             {% for g in modelos_chat_grupos %}
             {% if g.modelos %}
             <optgroup label="{{ g.rotulo }}" class="grp-chat" {% if g.externo %}data-prov="{{ g.externo }}"{% endif %}>
               {% for m in g.modelos %}
-              <option value="{{ m.nome }}" {{ 'selected' if m.ativo }}{% if m.visao %} data-tipo="multimodal"{% endif %}{% if m.ctx or m.info %} title="{{ (m.info or '') ~ (' · ctx ' ~ (m.ctx // 1000) ~ 'k' if m.ctx else '') }}"{% endif %}>{{ '👁 ' if m.visao else '' }}{{ m.rotulo or m.nome }}{% if m.gb %} · {{ m.gb }}GB{% elif m.ctx %} · {{ m.ctx // 1000 }}k{% endif %}</option>
+              <option value="{{ m.nome }}" {{ 'selected' if m.ativo }}{% if m.ctx or m.info %} title="{{ (m.info or '') ~ (' · ctx ' ~ (m.ctx // 1000) ~ 'k' if m.ctx else '') }}"{% endif %}>{{ m.rotulo or m.nome }}{% if m.gb %} · {{ m.gb }}GB{% elif m.ctx %} · {{ m.ctx // 1000 }}k{% endif %}</option>
               {% endfor %}
             </optgroup>
             {% endif %}
             {% endfor %}
           </select>
-          {# 3º: MODO — como usar a base (no i2t o PRÓPRIO select assume
-             "análise de imagem": nada de legenda solta — o modo não se
-             aplica e o layout do composer fica intacto) #}
+          {# 2º: MODO — como usar a base #}
           <select name="mode" id="sel-modo" title="modo de resposta (como a base entra)">
             <option value="hibrido">híbrido</option>
             <option value="rag">rag (só a base)</option>
@@ -104,22 +79,14 @@
             <option value="auto">auto</option>
           </select>
           <button type="button" onclick="melhorarPrompt(this)" id="btn-prompt"
-                  title="a ✨ reescreve o que você digitou na melhor forma — pergunta, pedido de código, instrução ou mídia (se o seletor estiver ativo)">✨ prompt</button>
+                  title="a ✨ reescreve o que você digitou na melhor forma — pergunta, pedido de código, instrução">✨ prompt</button>
           <button type="button" onclick="alternarPainel()" id="btn-painel"
-                  title="mostrar/ocultar o painel da conversa (arquivos · mídia · fontes)">{{ icone("painel") }} painel</button>
+                  title="mostrar/ocultar o painel da conversa (arquivos · fontes)">{{ icone("painel") }} painel</button>
           <button type="button" hx-post="/hx/conversa/nova" hx-target="#palco" hx-swap="innerHTML" title="nova conversa">&#10133; nova</button>
         </div>
-        {# 🎯 GUIA do tipo escolhido (pedido: "prover bastante informação para a
-           criação, de cada modelo e tipo"): conhecimento de bastidor ANTES de
-           gerar — só aparece quando um tipo de mídia está selecionado #}
-        <details class="colecoes-box guia-midia" id="guia-midia" hidden>
-          <summary id="guia-midia-titulo">🎯 guia</summary>
-          <div id="guia-midia-corpo" class="mini" style="line-height:1.55;"></div>
-        </details>
         {# ══ COLEÇÕES: grid de checkboxes (rola dentro) — marcar alguma no
            modo LIVRE troca para HÍBRIDO automaticamente: coleção marcada
-           É contexto RAG (o servidor também promove; o select reflete);
-           OCULTAS na geração de mídia (ambiente limpo — não se aplicam) ══ #}
+           É contexto RAG (o servidor também promove; o select reflete) ══ #}
         <details class="colecoes-box" id="colecoes-box" open>
           <summary>coleções do contexto ({{ colecoes | length }})</summary>
           <input type="search" id="colecao-busca" placeholder="pesquisar coleção…" autocomplete="off"
@@ -147,8 +114,6 @@
         </details>
       </form>
       <p class="mini" style="margin:.4rem 0 0;">
-        o chat responde em TEXTO — geração de imagem/vídeo/gif e análise
-        avulsa moram no módulo <a href="/midia">👁 Multimídia</a>.
         ⏎ envia · ⇧⏎ nova linha · ↑ recupera a última pergunta.
       </p>
     </section>
@@ -189,8 +154,6 @@
       <div class="painel-abas" id="painel-abas">
         <button type="button" class="aba ativa" data-aba="arquivos" title="arquivos de código da conversa">
           {{ icone("arquivo") }} arquivos <span class="n"></span></button>
-        <button type="button" class="aba" data-aba="midia" title="mídia gerada na conversa">
-          {{ icone("filme") }} mídia <span class="n"></span></button>
         <button type="button" class="aba" data-aba="fontes" title="documentos que basearam as respostas">
           {{ icone("livro") }} fontes <span class="n"></span></button>
       </div>
@@ -320,7 +283,6 @@ FORM.addEventListener("htmx:afterRequest", (e) => {
   if (e.target !== FORM) return;
   _enviando = false;
   if (e.detail.successful) {
-    tirarDoContexto();   // a referência foi consumida pelo envio
     _ultimoEnvio = "";
   } else {
     // 🫧 envio FALHOU/EXPIROU (timeout 20 s de conexão morta): a bolha
@@ -368,9 +330,9 @@ function filtrarColecoes(termo) {
     (el.hidden = t ? !el.textContent.toLowerCase().includes(t) : false));
 }
 let _mcpsMarcados = new Set(
-  JSON.parse(localStorage.getItem("ragaroy.mcps") || "[]"));
+  JSON.parse(localStorage.getItem("ragchat.mcps") || "[]"));
 function _salvarMcps() {   // a seleção ACOMPANHA o usuário (próximas visitas)
-  localStorage.setItem("ragaroy.mcps", JSON.stringify([..._mcpsMarcados]));
+  localStorage.setItem("ragchat.mcps", JSON.stringify([..._mcpsMarcados]));
 }
 function filtrarMcps(termo) {
   const t = (termo || "").toLowerCase();
@@ -378,7 +340,7 @@ function filtrarMcps(termo) {
     (el.hidden = t ? !el.textContent.toLowerCase().includes(t) : false));
 }
 /* 🔎 PESQUISA-WEB (NATIVA): entra na lista ANTES dos servidores — é o
-   motor de busca do RagAroy (páginas inteiras, não snippets), marcável
+   motor de busca do RagChat (páginas inteiras, não snippets), marcável
    como qualquer MCP para contextualizar a sessão com informação atual. */
 const MCP_NATIVO = {
   nome: "pesquisa-web",
@@ -429,26 +391,16 @@ document.getElementById("mcp-box")?.addEventListener("toggle", (e) => {
    badge mostra o que está NO AR agora; trocar modelo = clicar no select
    (a troca dispara na hora e o badge acompanha até subir — natural). */
 let MODELO_ATIVO = "";
-let VISAO_ATIVA = "";
 async function atualizarModeloAtivo() {
   const b = document.getElementById("badge-modelo");
   if (!b) return;
   try {
     const d = await (await fetch("/api/modelo/ativo")).json();
     MODELO_ATIVO = d.modelo || "";
-    VISAO_ATIVA = d.visao || "";
-    // 🧠 badge = o modelo que VAI RESPONDER este envio: multimodal (👁)
-    // quando o tipo é imagem→texto — mesma fonte única do Sistema/dashboard
-    const usaVisao = document.getElementById("sel-midia")?.value === "i2t";
-    const quem = usaVisao
-      ? (VISAO_ATIVA || "multimodal sobe na 1ª análise")
-      : MODELO_ATIVO;
-    b.textContent = (usaVisao ? "👁 " : "🧠 ") + (quem || "offline");
-    b.title = usaVisao
-      ? "análise multimodal no ar agora (lido do servidor)"
-      : (MODELO_ATIVO
-        ? "modelo de conversa no ar agora (lido do servidor)"
-        : "nenhum modelo de conversa no ar");
+    b.textContent = "🧠 " + (MODELO_ATIVO || "offline");
+    b.title = MODELO_ATIVO
+      ? "modelo de conversa no ar agora (lido do servidor)"
+      : "nenhum modelo de conversa no ar";
   } catch {
     b.textContent = "🧠 …";
   }
@@ -495,101 +447,7 @@ atualizarModeloAtivo();
    polling; o servidor decide apenas o estado INICIAL (ao vivo aberto,
    histórico recolhido) e a escolha do usuário SEMPRE vence. ═══════════ */
 
-/* ═══════════ 2. MICROFONE com VAD (detecção de silêncio) ═══════════
-   TÉCNICA: VAD por ENERGIA (RMS). Um AnalyserNode lê o volume do micro
-   em tempo real; enquanto você fala a energia fica alta. Quando cai
-   abaixo do limiar por ~1.4 s SEGUIDOS (e já houve fala), a gravação
-   para sozinha → transcreve (whisper) → ENVIA na hora. É o mesmo
-   "auto-stop" de assistentes de voz; alternativa é WebRTC VAD nativo. */
-let gravando = false, mediaRec = null, chunks = [], streamMic = null,
-    vadTimer = null, analyser = null, audioCtx = null;
-
-function _vadEstado(txt, cor) {
-  const b = document.getElementById("btn-mic");
-  b.title = txt;
-  b.style.borderColor = cor;
-}
-
-async function alternarMic() {
-  if (gravando) { _pararGravacao(); return; }
-  try {
-    streamMic = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    audioCtx.createMediaStreamSource(streamMic).connect(analyser);
-
-    mediaRec = new MediaRecorder(streamMic);
-    chunks = [];
-    mediaRec.ondataavailable = (e) => chunks.push(e.data);
-    mediaRec.onstop = async () => {
-      streamMic.getTracks().forEach(t => t.stop());
-      audioCtx?.close();
-      clearInterval(vadTimer);
-      const btn = document.getElementById("btn-mic");
-      btn.textContent = "⏳"; btn.classList.add("gravando");
-      const fd = new FormData();
-      fd.append("audio", new Blob(chunks, {type: "audio/webm"}), "ditado.webm");
-      try {
-        const r = await fetch("/hx/voz", {method: "POST", body: fd});
-        const html = await r.text();
-        const tmp = document.createElement("div"); tmp.innerHTML = html;
-        const novo_ = tmp.querySelector("textarea")?.value || "";
-        if (novo_.trim()) {
-          TA.value = novo_;                        // transcreveu
-          TA.focus();
-          FORM.requestSubmit();   // enviou: transcreveu -> manda
-        }
-      } catch (e) { alert("transcrição falhou: " + e); }
-      btn.textContent = "🎤"; btn.classList.remove("gravando");
-      _vadEstado("ditar — para sozinho no silêncio", "");
-    };
-    mediaRec.start();
-    gravando = true;
-    document.getElementById("btn-mic").textContent = "⏺";
-
-    // VAD: RMS a cada 150ms. Silêncio PROLONGADO (2.5s) após fala =
-    // terminou mesmo — pausas curtas de quem pensa NÃO interrompem.
-    // Limiar ADAPTATIVO: o ruído de fundo é medido nos 1.5s iniciais e o
-    // gatilho fica ACIMA dele (microfone ruidoso não engole a fala).
-    let silencioMs = 0, houveFala = false, pisoRuido = 0.012;
-    let amostrasRuido = [];
-    const buf = new Uint8Array(analyser.frequencyBinCount);
-    const t0Vad = Date.now();
-    vadTimer = setInterval(() => {
-      analyser.getByteTimeDomainData(buf);
-      let soma = 0;
-      for (const v of buf) { const d = (v - 128) / 128; soma += d * d; }
-      const rms = Math.sqrt(soma / buf.length);
-      if (!houveFala && Date.now() - t0Vad < 1500) {
-        amostrasRuido.push(rms);
-        _vadEstado("calibrando ambiente…", "var(--suave)");
-        return;
-      }
-      if (amostrasRuido.length) {
-        pisoRuido = Math.max(0.012,
-          (amostrasRuido.reduce((a, b) => a + b, 0) /
-           amostrasRuido.length) * 2.5);
-        amostrasRuido = [];
-      }
-      if (rms > pisoRuido) {
-        houveFala = true; silencioMs = 0;
-        _vadEstado("ouvindo… (fale à vontade)", "var(--ok)");
-      } else if (houveFala) {
-        silencioMs += 150;
-        _vadEstado("pausa " + (silencioMs / 1000).toFixed(1) +
-                   "s / 2.5s…", "var(--aviso)");
-        if (silencioMs >= 2500) _pararGravacao();
-      }
-    }, 150);
-  } catch (e) { alert("microfone indisponível: " + e.message); }
-}
-function _pararGravacao() {
-  clearInterval(vadTimer);
-  if (mediaRec && mediaRec.state !== "inactive") mediaRec.stop();
-  gravando = false;
-}
-
+/* ═══════════ 2. COPIAR (botões de código) ═══════════ */
 function _copiar(btn, texto) {
   navigator.clipboard.writeText(texto).then(() => {
     const antigo = btn.textContent;
@@ -597,210 +455,6 @@ function _copiar(btn, texto) {
     setTimeout(() => btn.textContent = antigo, 1400);
   });
 }
-
-/* ═══════════ 3. COMBOBOX INTELIGENTE (tipo ↔ modelos) ═══════════
-   O select é RECONSTRUÍDO por tipo (pedido do dono: "deve saber para
-   que serve cada modelo"): texto → SÓ modelos de conversa (wan/flux/
-   multimodal NEM aparecem na lista); imagem → só Flux; vídeo/gif/i2v/
-   i2g → só Wan2.2; i2t → só o multimodal. A escolha de conversa volta
-   sozinha quando o tipo retorna a texto. */
-const SEL_MODEL = document.getElementById("sel-modelo");
-const SEL_MIDIA = document.getElementById("sel-midia");
-// catálogo ÚNICO lido UMA vez do render do servidor
-const _MODELOS_TODOS = [...SEL_MODEL.querySelectorAll("option")].map(o => ({
-  valor: o.value, texto: o.textContent.trim(),
-  grupo: o.closest("optgroup")?.label || "modelos",
-  chat: !!o.closest("optgroup.grp-chat"),
-  tipo: o.dataset.tipo || "",
-}));
-let _modeloChat = [..._MODELOS_TODOS].find(o => o.valor === SEL_MODEL.value)?.valor
-                  || _MODELOS_TODOS.find(o => o.chat)?.valor || "";
-
-function _popularModelos(opts, titulo) {
-  SEL_MODEL.innerHTML = "";
-  const grupos = new Map();   // preserva a ordem de entrada
-  opts.forEach(o => {
-    if (!grupos.has(o.grupo)) grupos.set(o.grupo, []);
-    grupos.get(o.grupo).push(o);
-  });
-  for (const [rotulo, itens] of grupos) {
-    const g = document.createElement("optgroup");
-    g.label = rotulo;
-    if (itens[0].chat) g.className = "grp-chat";
-    for (const it of itens) {
-      const op = document.createElement("option");
-      op.value = it.valor;
-      op.textContent = it.texto;
-      g.appendChild(op);
-    }
-    SEL_MODEL.appendChild(g);
-  }
-  SEL_MODEL.title = titulo;
-}
-
-/* 🎯 GUIA por tipo+modelo com CHIPS DE PROMPT (pedido do dono: "dar dicas de
-   ambientes e prompts, estilo — realismo, desenho, quadrinhos… ajudar no
-   prompt"): o clique INSERE a dica no campo de pergunta — o ✨ depois vira
-   storytelling denso. Cada tipo mostra o que importa pra ele. */
-const CHIPS_MIDIA = {
-  estilo: { rotulo: "🎨 estilo", itens: [
-    "realismo fotográfico", "cinematográfico", "anime", "desenho animado",
-    "quadrinhos / HQ", "3D render", "aquarela", "pixel art",
-    "neon cyberpunk", "minimalista"] },
-  ambiente: { rotulo: "🌍 ambiente", itens: [
-    "cidade à noite com chuva e neon", "floresta ao amanhecer com névoa",
-    "praia ao pôr do sol", "interior aconchegante com lareira",
-    "espaço sideral com nebulosa", "deserto ao meio-dia",
-    "estúdio com fundo limpo"] },
-  luz: { rotulo: "💡 luz · câmera", itens: [
-    "golden hour", "luz suave difusa", "iluminação dramática", "contraluz",
-    "close-up", "plano aberto", "vista de drone", "câmera lenta"] },
-  movimento: { rotulo: "🎥 movimento", itens: [
-    "câmera dolly lento", "pan suave da esquerda pra direita", "câmera fixa",
-    "movimento cíclico suave"] },
-};
-function _chipsHTML(categorias) {
-  let html = "";
-  for (const c of categorias) {
-    const g = CHIPS_MIDIA[c];
-    if (!g) continue;
-    html += `<div style="margin:.3rem 0;"><span class="mini" style="opacity:.8;">${g.rotulo}:</span> `;
-    for (const it of g.itens) {
-      const t = it.replace(/'/g, "\\'");
-      html += `<button type="button" class="chip-prompt" data-txt="${t}" onclick="chipPrompt(this.dataset.txt)">${it}</button>`;
-    }
-    html += "</div>";
-  }
-  return html;
-}
-const GUIA_MIDIA = {
-  imagem: { titulo: "🎯 guia · imagem (Flux)",
-    corpo: () => `<b>Uma cena que conta história</b>: sujeito com expressão, ação em
-      andamento, luz com direção, estilo e enquadramento. ⚠️ sem texto/letras na
-      imagem. Clique nas dicas — elas entram no seu prompt (o ✨ transforma em
-      cena densa):` + _chipsHTML(["estilo", "ambiente", "luz"]) },
-  video: { titulo: "🎯 guia · vídeo (Wan — você escolhe a duração)",
-    corpo: () => `<b>Cena única que se desenvolve</b>: sujeito GRANDE no quadro, uma
-      ação contínua, câmera declarada. Wan2.1 é leve e estável; Wan2.2 tem mais
-      detalhe (movimentos amplos degradam). Sem cortes, sem texto na tela.<br>
-      ⏱️ <b>escolha a duração ao lado</b> e o prompt acompanha (spec
-      midia_duracao): <b>2s</b>=um gesto legível · <b>3s</b>=arco mínimo
-      (preparo→ação→reação) · <b>5s</b>=ação + desenvolvimento · <b>8s</b>=2–3
-      beats encadeados na mesma cena (gera ~4× mais devagar que 2s):` +
-      _chipsHTML(["estilo", "ambiente", "luz", "movimento"]) },
-  gif: { titulo: "🎯 guia · gif (17 frames · loop)",
-    corpo: () => `<b>GIF bom = loop perfeito</b>: UMA ação curta e cíclica (respirar,
-      girar, ondular) que volta ao início sem emenda. Movimento no CENTRO, sem
-      cortes, sem texto. Ida e volta = loop natural:` +
-      _chipsHTML(["estilo", "ambiente", "movimento"]) },
-  i2t: { titulo: "🎯 guia · imagem → texto (Qwen2.5-VL)",
-    corpo: () => `Suba a imagem (📎) e pergunte <b>o que extrair dela</b>: descrição,
-      texto contido (placas/código/documento), objetos e contagens, cores,
-      contexto. Perguntas específicas dão respostas melhores que "descreva".` },
-  i2v: { titulo: "🎯 guia · imagem → vídeo (Wan)",
-    corpo: () => `A imagem anexa (📎) vira o <b>primeiro quadro</b>: descreva o
-      MOVIMENTO que parte dela (não uma cena nova). Movimento suave e contínuo
-      funciona melhor. ⏱️ a duração ao lado escala a ação
-      (2s=um gesto · 5s=desenvolvimento · 8s=2–3 beats):` + _chipsHTML(["movimento", "luz"]) },
-  i2g: { titulo: "🎯 guia · imagem → gif (loop)",
-    corpo: () => `A imagem anexa (📎) é o primeiro frame: o movimento parte dela e
-      VOLTA a ela (ida e volta = loop perfeito). UMA ação cíclica, curta,
-      centrada:` + _chipsHTML(["movimento"]) },
-};
-function _atualizarGuia(tipo) {
-  const box = document.getElementById("guia-midia");
-  const g = GUIA_MIDIA[tipo];
-  if (!g) { box.hidden = true; return; }
-  document.getElementById("guia-midia-titulo").textContent = g.titulo;
-  document.getElementById("guia-midia-corpo").innerHTML =
-    (typeof g.corpo === "function" ? g.corpo() : g.corpo);
-  box.hidden = false;
-  box.open = true;   // dicas À VISTA ao escolher o tipo (chips clicáveis)
-}
-/* clique na dica → ENTRA no prompt (com vírgula quando já há texto) */
-function chipPrompt(txt) {
-  const ta = document.getElementById("pergunta");
-  const atual = ta.value.trim();
-  ta.value = atual ? atual.replace(/[.,;\s]+$/, "") + ", " + txt : txt;
-  ta.focus();
-  ta.dispatchEvent(new Event("input", {bubbles: true}));
-}
-
-function midiaMudou() {
-  const tipo = SEL_MIDIA.value;
-  const modo = document.getElementById("sel-modo");
-  const btnAnexo = document.getElementById("btn-anexo");
-  // MODO só vale para TEXTO — no i2t o PRÓPRIO select assume a cara de
-  // "análise de imagem" (legenda solta parecia informação sem layout —
-  // pedido do dono); o valor salvo é restaurado ao voltar pro texto
-  if (modo) {
-    if (tipo && !modo.dataset.original) {
-      modo.dataset.original = modo.innerHTML;   // guarda hibrido/rag/livre/auto
-      modo.innerHTML = '<option value="">👁 análise de imagem</option>';
-    } else if (!tipo && modo.dataset.original) {
-      modo.innerHTML = modo.dataset.original;
-      delete modo.dataset.original;
-    }
-  }
-  // 📎 botão de subir imagem: SÓ na análise (i2t)
-  if (btnAnexo) {
-    btnAnexo.hidden = tipo !== "i2t";
-    btnAnexo.title = "subir a imagem para o multimodal analisar";
-  }
-  agendarModeloAtivo();   // i2t ↔ texto troca o modelo exibido no badge
-  // 🕵️ AMBIENTE LIMPO na análise: coleções/MCP não se aplicam — saem da
-  // vista; o GUIA do tipo entra no lugar deles
-  const boxColecoes = document.getElementById("colecoes-box");
-  const boxMcp = document.getElementById("mcp-box");
-  if (boxColecoes) boxColecoes.hidden = !!tipo;
-  if (boxMcp) boxMcp.hidden = !!tipo;
-  _atualizarGuia(tipo || "");
-  if (!tipo) {                                   // texto: SÓ conversa
-    _popularModelos(_MODELOS_TODOS.filter(o => o.chat),
-                    "modelo de conversa (lido do servidor no badge 🧠)");
-    if (_MODELOS_TODOS.some(o => o.chat && o.valor === _modeloChat))
-      SEL_MODEL.value = _modeloChat;
-    return;
-  }
-  const atual = _MODELOS_TODOS.find(o => o.valor === SEL_MODEL.value);
-  if (atual?.chat) _modeloChat = atual.valor;    // guarda a escolha de conversa
-  _popularModelos(_MODELOS_TODOS.filter(o => o.tipo === "multimodal"),
-                  "modelo 👁 para analisar a imagem");
-}
-
-/* 📎 SUBIR IMAGEM: /api/upload salva em saidas/entrada e devolve o
-   caminho — vira a `referencia` do envio (o mesmo campo do "incluir no
-   contexto" do painel: i2* usa como entrada, texto comum usa a visão
-   para descrever). O chip mostra o nome; clique remove. */
-async function anexoSubido(input) {
-  const arq = input.files?.[0];
-  input.value = "";   // permite subir o MESMO arquivo de novo depois
-  if (!arq) return;
-  const chip = document.getElementById("chip-ref");
-  chip.hidden = false;
-  chip.textContent = "📎 subindo " + arq.name + "…";
-  try {
-    const fd = new FormData();
-    fd.append("file", arq);
-    const r = await fetch("/api/upload", {method: "POST", body: fd});
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
-    document.getElementById("referencia").value = d.arquivo;
-    chip.textContent = "📎 " + d.nome + " ✓";
-    chip.title = "imagem anexada — clique para remover";
-  } catch (e) {
-    chip.textContent = "⚠️ " + e.message;
-    document.getElementById("referencia").value = "";
-    setTimeout(() => (chip.hidden = true), 2600);
-  }
-}
-document.getElementById("chip-ref")?.addEventListener("click", () => {
-  document.getElementById("referencia").value = "";
-  const chip = document.getElementById("chip-ref");
-  chip.hidden = true;
-  chip.textContent = "";
-});
-midiaMudou();   // normaliza o select no load (texto = só conversa)
 
 // COLEÇÃO MARCADA = contexto RAG: no modo livre ela seria ignorada —
 // marcar a 1ª coleção troca o select para híbrido (o servidor também
@@ -819,23 +473,18 @@ midiaMudou();   // normaliza o select no load (texto = só conversa)
 })();
 
 /* ✨ PROMPT universal: a LLM reescreve o RASCUNHO na melhor forma — entende
-   só o que está digitado (pergunta, código, instrução); o tipo de mídia,
-   quando SELECIONADO, vai apenas como DICA. Substitui o texto da caixa. */
+   só o que está digitado (pergunta, código, instrução). Substitui o
+   texto da caixa. */
 async function melhorarPrompt(btn) {
   const ta = document.getElementById("pergunta");
   const ideia = ta.value.trim();
   if (!ideia) { alert("escreva algo primeiro — a ✨ propõe a melhor forma de pedir"); return; }
-  let dicaTipo = SEL_MIDIA.value || "";   // vazio: melhoria GENÉRICA
-  // (dur saiu com a geração — o chat é texto; a dica só distingue i2t)
   const o = btn.textContent; btn.textContent = "…"; btn.disabled = true;
   try {
     const r = await fetch("/hx/prompt-melhorar", {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
-      body: "ideia=" + encodeURIComponent(ideia)
-          + "&tipo=" + encodeURIComponent(dicaTipo)
-          + "&referencia=" + encodeURIComponent(
-              document.getElementById("referencia").value || ""),
+      body: "ideia=" + encodeURIComponent(ideia),
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const txt = (await r.text()).trim();
@@ -849,10 +498,9 @@ async function melhorarPrompt(btn) {
   setTimeout(() => (btn.textContent = o), 1400);
 }
 
-/* ═══════════ 5. CONVERSAS (alça de resize REMOVIDA — padrão único com o
-   Multimídia, largura fixa no CSS): clique atualiza o DESTAQUE (antes:
-   clicar na conversa JÁ ATUAL não movia o highlight — parecia que o
-   botão "não funcionava") ═══════════ */
+/* ═══════════ 5. CONVERSAS (largura fixa no CSS): clique atualiza o
+   DESTAQUE (antes: clicar na conversa JÁ ATUAL não movia o highlight —
+   parecia que o botão "não funcionava") ═══════════ */
 (function () {
   // abrir conversa → lista re-carrega com o DESTAQUE certo (cookie mudou)
   // + SLUG na URI (pedido do dono): a URL vira /c/{sid} sem recarregar
@@ -888,13 +536,9 @@ async function melhorarPrompt(btn) {
 
 /* ═══════════ 4. PAINEL DA CONVERSA (direita) — AUTO-ALIMENTADO ═══════════
    TUDO que a conversa produz entra aqui SOZINHO (pedido do dono), em ABAS:
-   📄 arquivos (blocos de código/comando) · 🎬 mídia (imagem/vídeo/gif) ·
-   📚 fontes (docs citados + resposta completa).
-   - mídia tem PLAY (vídeo/gif nativos) e LIGHTBOX (clique amplia)
-   - mídia tem "📎 incluir no contexto" (vira referência da próxima
-     mensagem: vídeo/gif → i2v a partir dela; texto → visão descreve)
-   - painel EXPANSÍVEL: botão ⤢ ou arrastar a borda esquerda
-   - ⬇ baixa a ABA ATUAL em .zip (código → /api/zip; mídia → /api/midia/zip)
+   📄 arquivos (blocos de código/comando) · 📚 fontes (docs citados).
+   - painel EXPANSÍVEL: arrastar a borda esquerda
+   - ⬇ baixa a ABA ATUAL em .zip (código/fontes → /api/zip)
    - trocar de conversa RECONSTRÓI as abas a partir das mensagens */
 
 /* ESTADOS do painel: ABERTO | RETRAÍDO (orelha lateral). Nunca "some":
@@ -943,7 +587,6 @@ function _irParaAba(aba) {
     vazio.hidden = visiveis > 0;
     vazio.textContent = {
       arquivos: "nenhum arquivo de código ainda — peça código ao assistente.",
-      midia: "nenhuma mídia ainda — gere imagem/vídeo/gif na conversa.",
       fontes: "nenhuma fonte ainda — respostas com 📚 trazem as fontes.",
     }[aba] || "nada aqui ainda.";
   }
@@ -953,7 +596,7 @@ document.getElementById("painel-abas").addEventListener("click", (e) => {
   if (b) _irParaAba(b.dataset.aba);
 });
 function _contaAbas() {
-  const n = {arquivos: 0, midia: 0, fontes: 0};
+  const n = {arquivos: 0, fontes: 0};
   document.querySelectorAll("#split-corpo .painel-item")
     .forEach(it => { n[it.dataset.aba] = (n[it.dataset.aba] || 0) + 1; });
   document.querySelectorAll("#painel-abas .aba").forEach(b => {
@@ -961,7 +604,7 @@ function _contaAbas() {
     const v = n[b.dataset.aba] || 0;
     el.textContent = v ? "(" + v + ")" : "";
   });
-  const total = n.arquivos + n.midia + n.fontes;
+  const total = n.arquivos + n.fontes;
   const dl = document.getElementById("painel-zip");
   dl.hidden = !(n[abaAtual] > 0);
   dl.title = "baixar os itens da aba " + abaAtual + " em .zip";
@@ -974,7 +617,7 @@ function _contaAbas() {
   if (btn) {
     btn.disabled = false;
     btn.title = total === 0
-      ? "painel da conversa (vazio — arquivos, mídia e fontes entram sozinhos conforme você conversa)"
+      ? "painel da conversa (vazio — arquivos e fontes entram sozinhos conforme você conversa)"
       : "mostrar/ocultar o painel da conversa (" + total + " item(ns))";
   }
   const orelhaN = document.getElementById("orelha-n");
@@ -1323,35 +966,6 @@ document.getElementById("testar-modal").addEventListener("close", () => {
   fetch("/api/sandbox/limpar", {method: "POST"}).catch(() => {});
 });
 
-// mídia na aba 🎬 — play nativo + lightbox + incluir no contexto (sem duplicar)
-function mostrarMidiaNoPainel(tipo, arquivo, rotulo) {
-  const nome = (arquivo || "").split(/[\\/]/).pop();
-  const url = "/api/midia/" + tipo + "/" + encodeURIComponent(nome);
-  if (document.querySelector('#split-corpo .painel-item[data-url="' + url + '"]')) {
-    _irParaAba("midia"); return;
-  }
-  const item = _painelItemNovo(rotulo || nome, "midia");
-  item.dataset.url = url;
-  const acoes = document.createElement("div");
-  acoes.className = "midia-acoes";
-  const inc = document.createElement("button");
-  inc.className = "mini-btn incluir-ctx"; inc.textContent = "📎 incluir no contexto";
-  inc.title = "a mídia vira referência da próxima mensagem (vídeo/gif: gera a partir dela; texto: a visão descreve)";
-  inc.onclick = () => incluirNoContexto(nome, inc);
-  acoes.appendChild(inc);
-  item.querySelector(".doc-hd").appendChild(acoes);
-  const el = document.createElement(tipo === "video" ? "video" : "img");
-  el.className = "midia clicavel";
-  if (tipo === "video") el.controls = true; else el.alt = rotulo || "mídia";
-  el.src = url;
-  el.loading = "lazy";
-  el.title = "clique para ampliar";
-  if (tipo !== "video") el.onclick = () => abrirLightbox(url, rotulo);
-  item.appendChild(el);
-  _irParaAba("midia");          // chegou agora: mídia fica VISÍVEL
-  // SEM auto-scroll (pedido do dono): nada rola sozinho, em lugar nenhum
-}
-
 // resposta em TELA AMPLA (modal de leitura): o botão "▪ resposta" abre a
 // resposta renderizada num dialog — o painel 📚 fica SÓ com as fontes
 // (antes a resposta era injetada NA ABA DE FONTES e "misturava tudo").
@@ -1442,28 +1056,15 @@ async function baixarAbaZip(btn) {
   if (!itens.length) { alert("a aba " + abaAtual + " está vazia"); return; }
   const o = btn.textContent; btn.textContent = "…"; btn.disabled = true;
   try {
-    let url, corpo;
-    if (abaAtual === "midia") {
-      // refs pasta\arquivo — a API resolve em saidas/ e empacota
-      const refs = itens.map(it => {
-        const m = (it.dataset.url || "").match(/\/api\/midia\/(\w+)\/(.+)$/);
-        return m ? decodeURIComponent(m[1]) + "\\" + decodeURIComponent(m[2]) : null;
-      }).filter(Boolean);
-      if (!refs.length) throw new Error("nenhuma mídia com arquivo em disco");
-      url = "/api/midia/zip";
-      corpo = {arquivos: refs};
-    } else {
-      // arquivos (código, com o NOME extraído) e fontes viram {nome, conteudo}
-      corpo = {arquivos: itens.map((it, i) => {
-        const nome = abaAtual === "arquivos"
-          ? (it.dataset.nome || "bloco" + (i + 1) + ".txt")
-          : ("fonte_" + (i + 1) + ".txt");
-        const el = it.querySelector("pre code, pre, .doc-tx, .resposta");
-        return {nome, conteudo: el ? el.innerText : it.innerText};
-      })};
-      url = "/api/zip";
-    }
-    const r = await fetch(url, {
+    // arquivos (código, com o NOME extraído) e fontes viram {nome, conteudo}
+    const corpo = {arquivos: itens.map((it, i) => {
+      const nome = abaAtual === "arquivos"
+        ? (it.dataset.nome || "bloco" + (i + 1) + ".txt")
+        : ("fonte_" + (i + 1) + ".txt");
+      const el = it.querySelector("pre code, pre, .doc-tx, .resposta");
+      return {nome, conteudo: el ? el.innerText : it.innerText};
+    })};
+    const r = await fetch("/api/zip", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(corpo),
@@ -1476,7 +1077,7 @@ async function baixarAbaZip(btn) {
     const blob = await r.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "ragaroy_" + abaAtual + "_" + Date.now() + ".zip";
+    a.download = "ragchat_" + abaAtual + "_" + Date.now() + ".zip";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1491,31 +1092,6 @@ async function baixarAbaZip(btn) {
   }
   btn.disabled = false;
   setTimeout(() => (btn.textContent = o), 1400);
-}
-
-/* ---------- incluir no contexto (mídia -> referência da próxima msg) ---
-   SUBTENDIDO: não há chip/indicador — a mídia anexada simplesmente
-   acompanha a próxima mensagem (o feedback fica só no botão do painel). */
-let contextoMidia = null;   // {nome}
-function incluirNoContexto(nome, btn) {
-  contextoMidia = {nome};
-  document.getElementById("referencia").value = nome;
-  if (btn) { const o = btn.textContent; btn.textContent = "✓ anexada";
-             setTimeout(() => (btn.textContent = o), 1400); }
-}
-function tirarDoContexto() {
-  contextoMidia = null;
-  document.getElementById("referencia").value = "";
-}
-
-/* ---------- lightbox (imagem ampliada) ---------- */
-function abrirLightbox(url, rotulo) {
-  const lb = document.createElement("div");
-  lb.className = "lightbox";
-  lb.title = "clique para fechar";
-  lb.innerHTML = '<img src="' + url + '" alt="' + (rotulo || "mídia") + '">';
-  lb.onclick = () => lb.remove();
-  document.body.appendChild(lb);
 }
 
 /* ---------- redimensionar: a alça da borda arrasta (botão de expandir
@@ -1574,21 +1150,6 @@ function painelColetar(escopo) {
       catch (e) { /* json inválido: o clique manual segue valendo */ }
     }
   });
-  /* MÍDIA no painel: cards de job (ao vivo) E mensagens do histórico
-     (#palco — m.midia da sessão). A marcação de "já coletada" é no
-     PRÓPRIO elemento (o card de job é recriado a cada poll; a mídia do
-     histórico não tem card — marcar no card deixava a da sessão de fora:
-     era o bug "mídia não aparece no painel / painel não abre"). */
-  escopo.querySelectorAll("img.midia, video.midia").forEach(mid => {
-    if (mid.dataset.noPainel) return;
-    if (mid.closest(".stream-ao-vivo") || mid.closest("#split-corpo")) return;
-    const m = (mid.getAttribute("src") || "").match(/\/api\/midia\/(\w+)\/(.+)$/);
-    if (!m) return;
-    mid.dataset.noPainel = "1";
-    const card = mid.closest("[id^='job-']");
-    mostrarMidiaNoPainel(m[1], decodeURIComponent(m[2]),
-      (card?.querySelector(".resumo-job")?.innerText || "mídia").slice(0, 70));
-  });
 }
 
 document.addEventListener("htmx:afterSwap", (ev) => {
@@ -1634,21 +1195,6 @@ function copiarMensagem(msg) {
     setTimeout(() => btn.textContent = o, 1400);
   });
 }
-
-/* ═══════════ 4. MODO VOZ (TTS automático na resposta final) ═══════════ */
-function marcaModoVoz() {}
-async function falarTexto(texto) {
-  try {
-    const r = await fetch("/hx/tts?texto=" + encodeURIComponent(texto));
-    const buf = await r.arrayBuffer();
-    new Audio(URL.createObjectURL(new Blob([buf], {type: "audio/wav"}))).play();
-  } catch (e) { console.warn("tts falhou", e); }
-}
-document.addEventListener("htmx:afterSwap", (ev) => {
-  if (!document.getElementById("modo-voz")?.checked) return;
-  const fim = document.querySelector("#pensando .msg.assistente .resposta");
-  if (fim) falarTexto(fim.textContent.slice(0, 1200));
-});
 </script>
 
 <script>

@@ -10,14 +10,6 @@
           {% else %}
             <div class="msg assistente" data-mi="{{ loop.index }}">
               <div class="cab-msg"><span class="av-msg">&#129302;</span><span class="quem">assistente{% if m.modelo %} · {{ m.modelo }}{% endif %}</span></div>
-              {% if m.midia %}
-              {# mídia gerada por esta conversa (sessão multimodal salva) #}
-              {% if m.midia.tipo == "video" %}
-              <video class="midia" controls src="/api/midia/video/{{ m.midia.arquivo | basename }}"></video>
-              {% else %}
-              <img class="midia clicavel" src="/api/midia/{{ m.midia.tipo }}/{{ m.midia.arquivo | basename }}" alt="{{ m.midia.arquivo | basename }}" onclick="abrirLightbox(this.src, '{{ m.midia.arquivo | basename | e }}')">
-              {% endif %}
-              {% endif %}
               <div class="resposta">{{ (m.html or (m.content | e)) | safe }}</div>
               {% if m.segundos %}
               <div class="rodape">⏱ levou {{ m.segundos }}s</div>
@@ -38,19 +30,18 @@
               {{ raciocinio(m.pensamentos, m.pensamentos if m.pensamentos_sintetizados else None, aberto=false) }}
               {% endif %}
               {% if m.content %}
-              <div class="rodape tts-link" data-texto="{{ m.content[:1200] | e }}">
-                <a href="#" onclick="falarTexto(this.closest('.tts-link').dataset.texto); return false;">▶ ouvir</a>
-                · <a href="#" onclick="abrirLeituraModal(this.closest('.msg').querySelector('.resposta')); return false;" title="abre a resposta inteira num popup de leitura (ESC fecha)">⤢ ler grande</a>
+              <div class="rodape">
+                <a href="#" onclick="abrirLeituraModal(this.closest('.msg').querySelector('.resposta')); return false;" title="abre a resposta inteira num popup de leitura (ESC fecha)">⤢ ler grande</a>
               </div>
               {% endif %}
             </div>
           {% endif %}
         {% else %}
-          {# estado VAZIO (revisado pelo multimodal do dono — glm-4.6v):
-             centro do palco, legenda legível e EXEMPLOS clicáveis que
-             preenchem o composer (nada de linha solta no topo). #}
+          {# estado VAZIO: centro do palco, legenda legível e EXEMPLOS
+             clicáveis que preenchem o composer (nada de linha solta no
+             topo). #}
           <div class="chat-vazio">
-            <p class="chat-vazio-titulo">converse, pergunte, peça mídia</p>
+            <p class="chat-vazio-titulo">converse, pergunte, pesquise</p>
             <p class="mini" style="opacity:.75;">o raciocínio aparece com log
               completo em cada resposta</p>
             <div class="chat-vazio-exemplos">

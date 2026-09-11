@@ -53,7 +53,6 @@ def delete_sessao(sid: str, request: Request):
     if not dados or dados.get("owner") != dono:
         raise HTTPException(status_code=404, detail=f"Sessão '{sid}' não encontrada")
     sessions.delete_session(sid)
-    tarefas.limpar_sessao(sid)
     print(f"🗑️  Sessão '{sid}' apagada")
     return {"removida": sid}
 

@@ -1,55 +1,37 @@
-﻿# ═══════════════════════════════════════════════════════════════
-# RagAroy — stack completa em um compose
+# ═══════════════════════════════════════════════════════════════
+# RagChat — stack em um compose
 # ═══════════════════════════════════════════════════════════════
 #
 # Uso:  docker compose up -d --build   (ou .\setup.ps1 na 1ª vez)
 #
 # Serviços:
-#   qdrant   :6333            (vetores; dashboard /dashboard)
-#   api      :8000            (FastAPI + webui; jobs rodam no executor
-#                              async IN-PROCESS — sem broker)
+#   api      :8001→8000       (FastAPI + webui; jobs rodam no executor
+#                             async IN-PROCESS — sem broker)
 #   sandbox  (rede interna)   (teste de código do chat)
+#
+# ⚠️ QDRANT EXTERNO: o fork USA a instância do rag-llama que já roda no
+# host (:6333, dados em rag-llama/qdrant_data) — as coleções existentes
+# aparecem sozinhas. Nenhum qdrant neste compose (decisão do dono).
 #
 # Redis/RabbitMQ REMOVIDOS (decisão do dono 27/08): jobs no executor
 # asyncio em memória, contadores em logs/uso_llm.jsonl, cache semântico
 # deu lugar à bússola (Qdrant) — nada de broker/cache externos.
 #
-# Os MODELOS (llama-server GPU, sd-cli, whisper) rodam NO HOST —
-# servicos_llm.py — e a API os alcança por host.docker.internal.
-# Estúdio/troca de modelo seguem no modo host (guards avisam).
+# Os MODELOS (llama-server GPU) rodam NO HOST — servicos_llm.py — e a
+# API os alcança por host.docker.internal. Troca de modelo segue no
+# modo host (guards avisam).
 
 services:
-  qdrant:
-    image: qdrant/qdrant:v1.12.5
-    container_name: ragaroy-qdrant
-    ports:
-      - "6333:6333"
-    volumes:
-      - ./qdrant_data:/qdrant/storage
-    restart: unless-stopped
-    # Qdrant com nofile 1024 (default do dockerd em VMs OCI) PANICA na
-    # otimização de coleções grandes: "RocksDB open error: IO error: Too
-    # many open files" (provado 28/08 no re-embed de 79k pontos —
-    # higienização de dotnet/python morreu no meio e deixou status red).
-    # 65536 é o padrão de mercado para vector stores.
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-
   api:
     build: .
-    container_name: ragaroy-api
+    container_name: ragchat-api
     ports:
-      - "8000:8000"
-    depends_on:
-      qdrant:
-        condition: service_started
+      - "8001:8000"
     environment:
-      # infra da rede interna do compose (VENDE o .env montado — config
-      # usa override=False em container justamente por isso)
+      # infra do HOST (VENDE o .env montado — config usa override=False
+      # em container justamente por isso)
       RAGAROY_CONTAINER: "1"
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: http://host.docker.internal:6333
       # modelos no HOST (GPU/binários locais — servicos_llm.py)
       LLM_BASE_URL: http://host.docker.internal:8090/v1
       EMBED_BASE_URL: http://host.docker.internal:8081/v1
@@ -65,6 +47,8 @@ services:
       # sandbox de execução (testa códigos do chat; rede interna, sem porta)
       SANDBOX_URL: ${SANDBOX_URL:-http://sandbox:8020}
       SANDBOX_TOKEN: ${SANDBOX_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # modelos: só leitura (o agente no host é quem ergue/servi os GGUFs);
       # pasta configurável no .env — ex.: MODELS_DIR=D:/models (Windows)
@@ -72,8 +56,8 @@ services:
       - ${MODELS_DIR:-./models}:/models:ro
       # cache do HuggingFace do reranker (bge-reranker-base ~1,1 GB) — sem
       # o volume, todo rebuild/boot baixa de novo. CAMINHO DO USUÁRIO da
-      # imagem (ragaroy, não-root): é onde as libs HF gravam de verdade
-      - ./hf_cache:/home/ragaroy/.cache/huggingface
+      # imagem (ragchat, não-root): é onde as libs HF gravam de verdade
+      - ./hf_cache:/home/ragchat/.cache/huggingface
       # estado persistente no HOST (mesmos caminhos do modo host)
       - ./.env:/app/.env
       - ./users.json:/app/users.json
@@ -84,9 +68,6 @@ services:
       - ./saidas:/app/saidas
       - ./logs:/app/logs
       - ./datasets:/app/datasets
-      # modelos de VOZ do chat (whisper small CPU + piper pt_BR) — baixados
-      # uma vez no host, reaproveitados pelo container
-      - ./modelos_voz:/app/modelos_voz
     restart: unless-stopped
 
   # ═══ SANDBOX: executa os códigos do chat para TESTE (multi-linguagem:
@@ -95,7 +76,7 @@ services:
   # /tmp/work (efêmero de propósito — cada teste é autossuficiente).
   sandbox:
     build: ./sandbox
-    container_name: ragaroy-sandbox
+    container_name: ragchat-sandbox
     environment:
       SANDBOX_TOKEN: ${SANDBOX_TOKEN:-}
     restart: unless-stopped

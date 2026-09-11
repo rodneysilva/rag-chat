@@ -4,8 +4,6 @@ Registro e troca dos modelos de D:\models, organizados por categoria.
 Categorias (derivadas do nome do arquivo — novos GGUFs aparecem sozinhos):
 - chat   → servido pelo llama-server :8090 (troca = liberar VRAM e subir outro)
 - embed  → servido pelo llama-server :8081 (BGE-M3; a base inteira é 1024 dims)
-- imagem → futuro: Flux/SD GGUF (texto→imagem)
-- video  → futuro: Hunyuan/Wan/LTX GGUF (texto→vídeo, imagem→vídeo)
 
 A troca do modelo de conversa (ativar) repete o ritual do servicos_llm.py,
 mas cirúrgica: derruba SOMENTE o processo que escuta a :8090 (o embedding
@@ -29,7 +27,6 @@ LOGS = PASTA / "logs"
 
 CHAT_PORTA = 8090
 EMBED_PORTA = 8081
-VL_PORTA = 8082  # visão (Qwen2.5-VL + mmproj) — sobe só quando pedida
 # contexto: 32k tokens divididos em 2 slots (16k cada) — o máximo que cabe
 # na VRAM de 8 GB com KV q8_0 junto do embedding; antes era 24k/4 slots (6k)
 CHAT_FLAGS = ["-ngl", "99", "-c", "32768", "-np", "2", "-fa", "on",
@@ -39,7 +36,6 @@ EMBED_GGUF = r"D:\models\bge-m3-q8_0.gguf"
 EMBED_FLAGS = ["--embeddings", "--pooling", "cls", "-ngl", "99", "-c", "8192",
                "-ub", "8192", "-b", "8192", "--alias", "bge-m3",
                "--host", "127.0.0.1", "--port", str(EMBED_PORTA)]
-VL_GGUF = r"D:\models\visao\Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
 
 # Regras de compatibilidade com os 8 GB de VRAM (RTX 4070 de laptop):
 # chat + embedding juntos precisam caber — 4,7 GB (7B Q4) + 0,7 GB (BGE-M3)
@@ -56,17 +52,11 @@ REGISTRO = {
     "llama3.1-8b-instruct": (r"D:\models\llama3.1\Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf", "chat"),
     "phi4-mini-instruct": (r"D:\models\phi4-mini\Phi-4-mini-instruct-Q5_K_M.gguf", "chat"),
     "mistral-nemo":       (r"D:\models\mistral-nemo\Mistral-Nemo-Instruct-2407-Q4_K_M.gguf", "chat"),
-    "qwen2.5-vl-7b":      (r"D:\models\visao\Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf", "visao"),
     "bge-m3":             (r"D:\models\bge-m3-q8_0.gguf", "embed"),
-    "wan2.1-t2v-1.3b":    (r"D:\models\video\Wan2.1-T2V-1.3B-Q8_0.gguf", "video"),
-    "wan2.2-ti2v-5b":     (r"D:\models\video\Wan2.2-TI2V-5B-Q8_0.gguf", "video"),
-    # 🎨 FLUX (imagem): fora do REGISTRO eles NÃO apareciam em produção —
-    # em container o listar() usa o REGISTRO (a pasta D:\models não existe
-    # no Linux da VPS) e o combobox caía no fallback fixo. Pedidos do dono:
-    # "cadê meus modelos locais de geração de imagem?"
-    "flux1-schnell":      (r"D:\models\imagem\flux1-schnell-Q4_K_S.gguf", "imagem"),
-    "flux1-dev":          (r"D:\models\imagem\flux1-dev-Q4_K_S.gguf", "imagem"),
 }
+# ⚠️ GGUFs de difusão/visão que ainda vivam em D:\models são classificados
+# pelos PADROES abaixo apenas para NÃO virar opção de conversa — o fork
+# RagChat não serve mídia (só chat :8090 e embedding :8081).
 
 # Padrões de nome para categorizar arquivos que chegarem sem registro
 PADROES = [
@@ -132,25 +122,22 @@ def listar(pasta: str | None = None) -> list[dict]:
         if alias in vistos:
             continue
         vistos.add(alias)
-        provider = ("llama-server" if categoria in ("chat", "embed", "visao")
-                    else "stable-diffusion.cpp" if categoria == "imagem" else "pendente")
+        provider = ("llama-server" if categoria in ("chat", "embed") else "pendente")
         compativel, motivo = True, ""
         if categoria == "chat" and gb > GB_MAX_CHAT:
             compativel = False
             motivo = (f"{gb} GB não cabem na VRAM de 8 GB junto com o embedding "
                       f"(limite ≈ {GB_MAX_CHAT} GB)")
         elif categoria == "visao":
-            motivo = "multimodal (imagem→texto) sobe na :8082 quando pedida"
+            motivo = "multimodal — fora do escopo do RagChat (fork só texto)"
         elif categoria == "imagem":
-            motivo = "geração pela aba 🎨 Mídia (pausa chat+embed durante)"
+            motivo = "geração de imagem — fora do escopo do RagChat"
         elif categoria == "video":
-            motivo = "vídeo/gif pelo chat (pausa as LLMs durante a geração)"
+            motivo = "geração de vídeo — fora do escopo do RagChat"
         modelos.append({
             "nome": alias, "arquivo": p.name, "caminho": str(p), "gb": gb,
             "categoria": categoria, "provider": provider,
             "uso": ("embed" if categoria == "embed"
-                    else "visao" if categoria == "visao"
-                    else "midia" if categoria in ("imagem", "video")
                     else USO.get(alias, "conversa")),
             "compativel": compativel, "motivo": motivo,
             "em_uso": alias == servidos[CHAT_PORTA] or alias == servidos[EMBED_PORTA],
@@ -190,8 +177,7 @@ def derrubar_todos_motores(log=print) -> dict:
     que não escutam porta nenhuma mas seguram VRAM): além das portas, mata
     TODOS os llama-server pelo NOME do processo."""
     derrubados = []
-    for porta, nome in ((CHAT_PORTA, "chat (:8090)"),
-                        (VL_PORTA, "visão (:8082)")):
+    for porta, nome in ((CHAT_PORTA, "chat (:8090)"),):
         try:
             if servido(porta) or _pids_na_porta(porta):
                 derrubar_porta(porta, f"parar-tudo {nome}")
@@ -257,7 +243,6 @@ def embedding_no_ar() -> bool:
 # dentro de saidas/ — sobrevive a restart de agente/API.
 _EMBED_OFF_MARKER = PASTA / "saidas" / "embed_off.marker"
 _LLM_OFF_MARKER = PASTA / "saidas" / "llm_off.marker"
-_VL_OFF_MARKER = PASTA / "saidas" / "vl_off.marker"
 
 
 def embed_manual_off() -> bool:
@@ -268,31 +253,6 @@ def llm_manual_off() -> bool:
     """llama-server do chat DESLIGADO à mão (persistido) — nem o boot do
     agente nem o restore do estúdio o religam; só o ▶ no badge 🧠."""
     return _LLM_OFF_MARKER.exists()
-
-
-def vl_manual_off() -> bool:
-    """Visão (:8082) DESLIGADA à mão (persistido) — legendagem/análise de
-    imagem falham com erro claro até religar no badge 👁."""
-    return _VL_OFF_MARKER.exists()
-
-
-def desligar_vl_manual(log=print, ja_derrubado: bool = False) -> dict:
-    """Bloqueia a visão (marker) e derruba o servidor se estiver no ar."""
-    _VL_OFF_MARKER.parent.mkdir(parents=True, exist_ok=True)
-    _VL_OFF_MARKER.write_text("off", encoding="utf-8")
-    if not ja_derrubado:
-        derrubar_porta(VL_PORTA, "llama-server (visão)")
-    log("👁 visão DESLIGADA manualmente — análise de imagem falha com erro "
-        "claro até ▶ ligar no badge 👁")
-    return {"ok": True, "manual_off": True}
-
-
-def ligar_vl_manual() -> dict:
-    """Religa a visão (remove o marker) e a PRÉ-AQUECE (sobe agora, ~1 min)
-    — a próxima análise já encontra o servidor de pé."""
-    _VL_OFF_MARKER.unlink(missing_ok=True)
-    ok = _subir_vl()
-    return {"ok": ok, "manual_off": False}
 
 
 def desligar_llm_manual(log=print, ja_derrubado: bool = False) -> dict:
@@ -513,73 +473,6 @@ def _subir_embed(esperar: bool = True) -> bool:
     return _esperar_saude(EMBED_PORTA) if esperar else True
 
 
-def _mmproj() -> str | None:
-    """Arquivo mmproj do Qwen2.5-VL em D:\\models\\visao (procura pelo nome)."""
-    pasta = Path(VL_GGUF).parent
-    if not pasta.is_dir():
-        return None
-    cand = sorted(pasta.glob("*mmproj*.gguf"))
-    return str(cand[0]) if cand else None
-
-
-def _vl_arquivos() -> tuple[str | None, str | None]:
-    """(modelo, mmproj) de visão por GLOB TOLERANTE em D:\\models\\visao —
-    nome fixo quebrava quando o arquivo real difere (bug real do dono
-    27/08: "eu TENHO o modelo, por que não subiu?" — o agente da estação
-    pode estar com caminho velho e exists() dava False → 'ausente')."""
-    pasta = Path(VL_GGUF).parent
-    if not pasta.is_dir():
-        return None, None
-    modelo = None
-    if Path(VL_GGUF).exists():
-        modelo = VL_GGUF
-    else:
-        cand = [c for c in sorted(pasta.glob("*[Vv][Ll]*.gguf"))
-                if "mmproj" not in c.name.lower()]
-        modelo = str(cand[0]) if cand else None
-    mmproj = _mmproj()
-    return modelo, mmproj
-
-
-def _subir_vl(esperar: bool = True) -> bool:
-    """Sobe a visão (Qwen2.5-VL + mmproj) na :8082 para legendar/ler mídia.
-
-    DESLIGADA MANUALMENTE (marker) → erro claro: a decisão do operador vence
-    o ciclo on-demand. Se a porta estiver servindo um modelo que NÃO é de
-    visão (llama-server sem mmproj — sobrou de outra sessão), ele é
-    DERRUBADO e o VL certo sobe no lugar: sem isto, a requisição com imagem
-    ia para um modelo texto puro e o servidor respondia 'this model does not
-    support image input'."""
-    if vl_manual_off():
-        raise RuntimeError("multimodal desligado manualmente — religue em "
-                           "Sistema → '🖼️ subir multimodal' (análises de "
-                           "imagem precisam dele)")
-    modelo, mmproj = _vl_arquivos()
-    if not (modelo and mmproj):
-        pasta = Path(VL_GGUF).parent
-        raise RuntimeError(
-            "modelo de visão ausente: coloque o Qwen2.5-VL GGUF + mmproj em "
-            f"{pasta} (tests_manual/baixar_multimodal.py) — encontrei: "
-            f"modelo={modelo}, mmproj={mmproj}")
-    alias = servido(VL_PORTA)
-    if alias:
-        if "vl" in alias.lower():
-            return True  # visão de verdade já no ar
-        # porta ocupada por modelo SEM visão: fora daqui
-        derrubar_porta(VL_PORTA, f"llama-server sem visão ({alias})")
-        time.sleep(2)
-    LOGS.mkdir(exist_ok=True)
-    log = open(LOGS / "llama-vl.log", "ab")
-    subprocess.Popen(
-        [config.LLAMA_BIN, "-m", modelo, "--mmproj", mmproj, "-ngl", "99", "-c", "8192",
-         "--alias", "qwen2.5-vl-7b", "--host", "127.0.0.1",
-         "--port", str(VL_PORTA)],
-        stdout=log, stderr=subprocess.STDOUT,
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-    )
-    return _esperar_saude(VL_PORTA, timeout=180) if esperar else True
-
-
 def derrubar_porta(porta: int, nome: str = "") -> list[int]:
     """Mata os processos que escutam a porta e devolve os PIDs (usado pelo
     swap de chat e pelo modo mídia, que precisa da VRAM inteira)."""
@@ -695,15 +588,13 @@ def ativar(alias: str, log=None) -> dict:
 
         t0 = time.time()
         print(f"🔁 Trocando modelo de conversa → {alias} ({m['gb']} GB)")
-        # 1. derruba o chat da :8090 E a visão da :8082 se estiver no ar
-        #    (embedding :8081 fica de pé)
+        # 1. derruba o chat da :8090 (embedding :8081 fica de pé)
         derrubar_porta(CHAT_PORTA, "llama-server (chat)")
-        derrubar_porta(VL_PORTA, "llama-server (visão)")
-        # 2. espera fixa por parâmetro (ESTUDIO_VRAM_ASSENTAMENTO_S): a
-        #    liberação de VRAM é do servidor/OS — o app não mede nem gerencia
-        assentar = config.ESTUDIO_VRAM_ASSENTAMENTO_S
+        # 2. espera fixa (VRAM_ASSENTAMENTO_S): a liberação de VRAM é do
+        #    servidor/OS — o app não mede nem gerencia
+        assentar = config.VRAM_ASSENTAMENTO_S
         print(f"   🧹 aguardando {assentar}s o servidor liberar a memória "
-              "(parâmetro ESTUDIO_VRAM_ASSENTAMENTO_S)")
+              "(constante VRAM_ASSENTAMENTO_S)")
         time.sleep(assentar)
         # 3. sobe o novo e espera o /health (já atualiza o .env)
         if not _subir_chat(alias, m["caminho"]):

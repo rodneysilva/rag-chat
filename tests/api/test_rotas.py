@@ -122,11 +122,6 @@ class TestMarkdownRender:
 
 
 class TestRotasChat:
-    def test_voz_sem_audio_nunca_500(self, cliente, logado):
-        """Sem audio: 422 (validacao) ou 200 tratado — nunca 500."""
-        r = cliente.post("/hx/voz", headers=logado)
-        assert r.status_code in (200, 422), r.status_code
-
     def test_conversa_copy_sem_sessao_vazia(self, cliente, logado):
         r = cliente.get("/hx/conversa/copy", headers=logado)
         assert r.status_code == 200

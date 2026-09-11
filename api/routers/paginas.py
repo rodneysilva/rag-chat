@@ -44,24 +44,11 @@ def pagina_chat(request: Request, _sid: str | None = None):
         ctx["modelos_chat_grupos"] = [
             {"rotulo": "programação", "modelos": _grupos["programacao"]},
             {"rotulo": "conversa", "modelos": _grupos["conversa"]}]
-        # 👁 VISÃO LOCAL: GGUFs categoria visao da estação — sem este grupo
-        # o i2t do chat ficava SEM modelo algum quando não há provedor 👁
-        # cloud cadastrado (o multimodal local morava no optgrp de geração
-        # que saiu do composer — bug real do dono: "seleciono imagem→texto
-        # e não aparece nenhum modelo")
-        _visao = [{"nome": m["nome"], "gb": m.get("gb"), "ativo": False,
-                   "visao": True, "ctx": None,
-                   "info": "multimodal local (GPU da estação)"}
-                  for m in modelos.listar() if m.get("categoria") == "visao"]
-        if _visao:
-            ctx["modelos_chat_grupos"].append(
-                {"rotulo": "👁 visão local", "modelos": _visao})
     except Exception:
         ctx["modelos_chat"] = []
         ctx["modelos_chat_grupos"] = []
     # 🌐 PROVEDORES EXTERNOS (glm/deepseek/openai/anthropic…) no mesmo
-    # seletor: um optgroup por provedor; multimodais (👁) também servem o
-    # i2t (análise de imagem pela API externa — GPU local intocada).
+    # seletor: um optgroup por provedor.
     # O valor é "prov:modelo" (parseado no _processar_query). Sem custo
     # quando LLM_PROVIDERS está vazio (nada configurado no .env).
     try:
@@ -87,33 +74,11 @@ def pagina_chat(request: Request, _sid: str | None = None):
                     "externo": _p["id"],
                     "modelos": [{"nome": f"{_p['id']}:{m['nome']}",
                                  "rotulo": m["nome"], "gb": None,
-                                 "ativo": False, "visao": m["visao"],
+                                 "ativo": False,
                                  "ctx": m.get("ctx"), "info": m.get("info", "")}
                                 for m in _por_cat[_cat]]})
     except Exception:
         pass
-    # modelos de GERAÇÃO (combobox inteligente: aparecem SÓ quando a mídia
-    # do composer é imagem [Flux variants] ou vídeo/gif [Wan2.2]).
-    # FALLBACK fixo: na VPS não há /models montado — sem isto o combobox
-    # de imagem ficava VAZIO (nada para selecionar).
-    _FLUX_FIXO = [{"nome": "flux1-schnell", "gb": 6.8},
-                  {"nome": "flux1-dev", "gb": 6.8}]
-    try:
-        _ger = {"imagem": [], "video": []}
-        for m in modelos.listar():
-            if m.get("categoria") in ("imagem", "video") and m.get("compativel", True):
-                _ger[m["categoria"]].append({"nome": m["nome"], "gb": m.get("gb")})
-        if not _ger["imagem"]:
-            _ger["imagem"] = _FLUX_FIXO
-        if not _ger["video"]:   # sem /models montado (VPS): as gerações de Wan
-            # conhecidas pela estação (o alias resolve no agente por substring)
-            _ger["video"] = [{"nome": "wan2.1-t2v-1.3b", "gb": 1.4},
-                             {"nome": "wan2.2-ti2v-5b", "gb": 5.0}]
-        ctx["modelos_geracao"] = _ger
-    except Exception:
-        ctx["modelos_geracao"] = {"imagem": _FLUX_FIXO,
-                                  "video": [{"nome": "wan2.1-t2v-1.3b", "gb": 1.4},
-                                            {"nome": "wan2.2-ti2v-5b", "gb": 5.0}]}
     try:
         ctx["mcps"] = [s.get("nome") or s for s in mcp_registry.list_servers()]
     except Exception:
@@ -245,19 +210,17 @@ def pagina_sistema(request: Request):
     st = status()
     ctx["servicos"] = st["services"]
     ctx["modelos"] = {"llm": st.get("modelo"), "embed": st.get("embedding")}
-    ctx["nomes"] = {"qdrant": "Qdrant", "llm": "LLM (chat)", "embed": "Embedding",
-                    "visao": "Multimodal (imagem→texto)"}
+    ctx["nomes"] = {"qdrant": "Qdrant", "llm": "LLM (chat)", "embed": "Embedding"}
     # 🧠 ATIVOS pela FONTE ÚNICA (`modelos_ativos`): o cabeçalho mostra o
     # que está SERVINDO agora (chat/visão/difusores) — nunca o .env velho.
     ctx["ativos"] = modelos_ativos()
     # 🌐 provedores CADASTRADOS (retrato no cartão ☁️ do Sistema — feedback
-    # de que a chave gravou: nome + nº de modelos e de 👁 multimodais)
+    # de que a chave gravou: nome + nº de modelos)
     try:
         from core import provedores as _prov
         ctx["provedores_externos"] = [
             {"id": p["id"], "nome": p["nome"],
-             "n_modelos": len(p["modelos"]),
-             "n_visao": sum(1 for m in p["modelos"] if m.get("cat") == "visao")}
+             "n_modelos": len(p["modelos"])}
             for p in _prov.listar() if p["externo"]]
         ctx["prov_conhecidos"] = [{"id": k, **v} for k, v in
                                   _prov.CONHECIDOS.items()]
@@ -267,8 +230,8 @@ def pagina_sistema(request: Request):
     # ── painel do MOTOR (modelos ativos + VRAM) ──────────────────────
     # em container: a verdade está no agente do host (quem tem a GPU).
     # AGENTE FORA? O status NÃO mente "desligado": a LLM continua
-    # servindo PELO TÚNEL (llm.disroy.org) — lê pelo túnel e avisa.
-    motor = {"chat": None, "embed": None, "visao": None, "vram_mi": None,
+    # servindo PELO TÚNEL — lê pelo túnel e avisa.
+    motor = {"chat": None, "embed": None, "vram_mi": None,
              "agente": None, "rodando": []}
     try:
         if config.EM_CONTAINER:
@@ -276,25 +239,22 @@ def pagina_sistema(request: Request):
                 saude = modelos._chamar_agente("/saude", timeout=5)
                 motor = {"chat": saude.get("chat"),
                          "embed": bool(saude.get("embed")),
-                         "visao": None, "vram_mi": saude.get("vram_mi"),
+                         "vram_mi": saude.get("vram_mi"),
                          "agente": True,
                          "rodando": saude.get("rodando") or []}
             except Exception as e:
                 # agente offline: a LLM pode estar no ar mesmo assim (túnel)
                 motor = {"chat": modelos.servido(modelos.CHAT_PORTA),
                          "embed": modelos.embedding_no_ar(),
-                         "visao": None, "vram_mi": None,
+                         "vram_mi": None,
                          "agente": f"offline ({str(e)[:60]}) — status lido "
-                                   "pelos túneis; geração de mídia exige o "
-                                   "agente na estação",
+                                   "pelos túneis",
                          "rodando": []}
         else:
             motor = {"chat": modelos.servido(modelos.CHAT_PORTA),
                      "embed": modelos.embedding_no_ar(),
-                     "visao": modelos.servido(modelos.VL_PORTA),
                      "vram_mi": modelos._vram_uso_mi(), "agente": None,
-                     "rodando": (tarefas.ativos()
-                                 if not config.EM_CONTAINER else [])}
+                     "rodando": []}
     except Exception as e:
         motor["agente"] = f"fora do ar ({str(e)[:80]})"
     ctx["motor"] = motor
@@ -359,16 +319,5 @@ def pagina_revisao(pid: str, request: Request):
     return TEMPLATES.TemplateResponse(request, "revisao.html",
                                       {"request": request, "resp": resp, "pid": pid,
                                        "expirou": False})
-
-
-@router.get("/midia")
-def midia_pagina(request: Request, s: str = ""):
-    return _midia_pagina_base(request, s)
-
-
-@router.get("/midia/{sid}")
-def midia_pagina_slug(sid: str, request: Request):
-    """Sessão multimídia por SLUG na URI (pedido do dono — /midia/{id})."""
-    return _midia_pagina_base(request, sid)
 
 

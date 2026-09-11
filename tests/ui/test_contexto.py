@@ -14,7 +14,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.ui.test_telas import pagina  # noqa: F401  (fixture)
+from tests.ui.test_telas import CHROME_CANDIDATOS, _api_viva, pagina  # noqa: F401,E402
+
+# mesmo guard do test_telas: a fixture (browser real) exige API no ar
+pytestmark = pytest.mark.skipif(
+    not _api_viva() or not CHROME_CANDIDATOS,
+    reason="API local fora do ar ou Chromium ausente (uvicorn :8001)")
 
 
 class TestContextoLLM:
@@ -25,7 +30,7 @@ class TestContextoLLM:
 
         def salvo(n):
             ck = [c["value"] for c in pg.context.cookies()
-                  if c["name"] == "rag_sessao"]
+                  if c["name"] == "rc_sessao"]
             f = Path("sessions") / f"{ck[0]}.json" if ck else None
             if not f or not f.exists():
                 return False
@@ -47,8 +52,10 @@ class TestContextoLLM:
             pg.wait_for_timeout(1000)
             if salvo(4):
                 break
+        sid = next(c["value"] for c in pg.context.cookies()
+                   if c["name"] == "rc_sessao")
         ultima = [m for m in json.loads(
-            (Path("sessions") / f"{pg.context.cookies()[-1]['value']}.json"
+            (Path("sessions") / f"{sid}.json"
              ).read_text(encoding="utf-8"))["raw"]
             if m["role"] == "assistant"][-1]["content"].lower()
         assert marca in ultima, (

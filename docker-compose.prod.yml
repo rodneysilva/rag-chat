@@ -1,35 +1,27 @@
 # ═══════════════════════════════════════════════════════════════
-# RagAroy — Compose de PRODUÇÃO (auto-contido, usado pelo Portal/CD)
+# RagChat — Compose de PRODUÇÃO (auto-contido, usado pelo Portal/CD)
 # ═══════════════════════════════════════════════════════════════
 # Este arquivo é consumido pelo dashboard de controle (stack com git).
 # NENHUM segredo/host aqui: valores sensíveis via variáveis do stack
 # (definidas no dashboard) ou do .env do servidor.
-# Caminhos de estado: /home/<user>/apps/rag-llama (persistência no host).
+# Caminhos de estado: /home/<user>/apps/rag-chat (persistência no host).
 #
+# QDRANT EXTERNO: o fork consome a instância existente no host da VPS
+# (:6333) — nenhum serviço qdrant aqui.
 # Redis/RabbitMQ REMOVIDOS (27/08): executor async in-process, contadores
 # em logs/uso_llm.jsonl, bússola (Qdrant) no lugar do cache semântico.
 
 services:
-  qdrant:
-    image: qdrant/qdrant:v1.12.5
-    container_name: ragaroy-qdrant
-    restart: always
-    volumes:
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/qdrant_data:/qdrant/storage
-
   api:
-    image: ragaroy-api:prod
+    image: ragchat-api:prod
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ragaroy-api
+    container_name: ragchat-api
     restart: always
-    depends_on:
-      qdrant:
-        condition: service_started
     environment:
       RAGAROY_CONTAINER: "1"
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: http://host.docker.internal:6333
       # LLM/embedding via túnel zero-trust da estação — URLs e chave do stack
       LLM_BASE_URL: ${LLM_BASE_URL}
       EMBED_BASE_URL: ${LLM_EMBED_BASE_URL}
@@ -38,16 +30,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/.env:/app/.env
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/users.json:/app/users.json
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/usuarios_permitidos.txt:/app/usuarios_permitidos.txt
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/mcp_servers.json:/app/mcp_servers.json
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/mcp_conhecidos.json:/app/mcp_conhecidos.json
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/sessions:/app/sessions
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/saidas:/app/saidas
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/logs:/app/logs
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/datasets:/app/datasets
-      - ${APP_DATA_DIR:-${APP_DATA_DIR:-/srv/rag-llama}}/modelos_voz:/app/modelos_voz
+      - ${APP_DATA_DIR:-/srv/rag-chat}/.env:/app/.env
+      - ${APP_DATA_DIR:-/srv/rag-chat}/users.json:/app/users.json
+      - ${APP_DATA_DIR:-/srv/rag-chat}/usuarios_permitidos.txt:/app/usuarios_permitidos.txt
+      - ${APP_DATA_DIR:-/srv/rag-chat}/mcp_servers.json:/app/mcp_servers.json
+      - ${APP_DATA_DIR:-/srv/rag-chat}/mcp_conhecidos.json:/app/mcp_conhecidos.json
+      - ${APP_DATA_DIR:-/srv/rag-chat}/sessions:/app/sessions
+      - ${APP_DATA_DIR:-/srv/rag-chat}/saidas:/app/saidas
+      - ${APP_DATA_DIR:-/srv/rag-chat}/logs:/app/logs
+      - ${APP_DATA_DIR:-/srv/rag-chat}/datasets:/app/datasets
     networks:
       - default
       - traefik_net

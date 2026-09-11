@@ -16,12 +16,10 @@
     <div class="kpi">
       <div class="rotulo">💬 chat (conversa) · :8090</div>
       <div class="valor titulo-quebra">
-        {% if motor.chat %}{{ motor.chat }}{% elif motor.rodando %}🎨 geração em curso{% else %}— desligado —{% endif %}
+        {% if motor.chat %}{{ motor.chat }}{% else %}— desligado —{% endif %}
       </div>
       <div class="sub">
-        {% if motor.chat %}<span class="cor-ok">● servindo o TEXTO do chat</span>
-        {% elif motor.rodando %}<span style="color:var(--aviso)">⏸️ pausado — a GPU está com:</span>
-          {% for r in motor.rodando[:3] %}<br><span class="mini">🎨 {{ r.rotulo }}</span>{% endfor %}
+        {% if motor.chat %}<span class="cor-ok">● servindo o chat</span>
         {% else %}<span class="cor-erro">○ fora</span>{% endif %}
       </div>
     </div>
@@ -34,18 +32,6 @@
       </div>
     </div>
     <div class="kpi">
-      <div class="rotulo">🖼️ visão (multimodal) · :8082 / 🌐</div>
-      <div class="valor titulo-quebra">
-        {% if ativos.visao %}{{ ativos.visao }}{% elif ativos.visao_externa %}{{ ativos.visao_externa[0] }}{% else %}— sobe quando pedida —{% endif %}
-      </div>
-      <div class="sub">
-        {% if ativos.visao %}<span class="cor-ok">● local no ar (análise i2t)</span>
-        {% elif ativos.visao_externa %}<span class="cor-ok">● via API externa</span>
-        {% else %}<span style="color:var(--suave)">○ escolha um 👁 no chat/Multimídia que ele sobe</span>{% endif %}
-        {% if ativos.difusores %} · 🎨 {{ ativos.difusores | length }} difusor(es){% endif %}
-      </div>
-    </div>
-    <div class="kpi">
       <div class="rotulo">🎮 VRAM</div>
       <div class="valor">{{ motor.vram_mi if motor.vram_mi is not none else "—" }}<small style="font-size:.6em; color:var(--suave);"> MiB</small></div>
       <div class="sub">{% if motor.agente is sameas true %}via agente (:8010)
@@ -53,7 +39,7 @@
     </div>
   </div>
 
-  {#Diretriz do dono: seleção de modelo vive no CHAT/MULTIMÍDIA — aqui é
+  {#Diretriz do dono: seleção de modelo vive no CHAT — aqui é
     SÓ estado da GPU e cadastro de chave (nada de listar modelos de novo)#}
 
   {# manutenção: ações RARAS de GPU fora do caminho (OOUX: níveis) #}
@@ -64,8 +50,6 @@
       <button hx-post="/api/llm/ligar" hx-swap="none" hx-confirm="subir o llama-server do chat (LLM_MODEL do .env)?">🧠 ligar chat</button>
       <button hx-post="/api/llm/desligar" hx-swap="none" hx-confirm="derrubar o chat e TRAVAR a religação automática?">⏸️ desligar chat</button>
       <button hx-post="/api/embed/ligar" hx-swap="none">🧬 religar embedding</button>
-      <button hx-post="/api/vl/ligar" hx-swap="none">🖼️ subir visão</button>
-      <button hx-post="/api/vl/desligar" hx-swap="none">🖼️ derrubar visão</button>
     </div>
   </details>
 </section>
@@ -77,8 +61,8 @@
   {% if provedores_externos %}
   <div style="display:flex; gap:.4rem; flex-wrap:wrap; margin:.2rem 0 .7rem;">
     {% for p in provedores_externos %}
-    <span class="chip-prompt" title="cadastrado — modelos no seletor do chat e no módulo 👁 Multimídia">
-      ✅ {{ p.nome }} <span class="mini">· {{ p.n_modelos }} modelo(s){% if p.n_visao %} · {{ p.n_visao }} 👁{% endif %}</span>
+    <span class="chip-prompt" title="cadastrado — modelos no seletor do chat">
+      ✅ {{ p.nome }} <span class="mini">· {{ p.n_modelos }} modelo(s)</span>
     </span>
     {% endfor %}
   </div>
@@ -86,8 +70,7 @@
   <p class="mini" style="margin-top:-.3rem;">APIs OpenAI-compatible — os
     <b>principais</b> em 1 clique (falta só a chave). Modelos e informações
     (contexto, descrição/preço quando a API entrega) são lidos
-    automaticamente; a seleção deles acontece no <b>chat</b> e no módulo
-    <b>👁 Multimídia</b> — aqui é só a chave.</p>
+    automaticamente; a seleção deles acontece no <b>chat</b> — aqui é só a chave.</p>
   <div style="display:flex; gap:.4rem; flex-wrap:wrap; margin:.4rem 0 .8rem;">
     {% for c in prov_conhecidos %}
     <button type="button" class="chip-prompt clicavel"
@@ -221,7 +204,7 @@
       document.getElementById("prov-res").textContent =
         "preenchido — cole a chave da API e clique em cadastrar";
     }
-    // chegou por ?prov=<id> (atalho do módulo Multimídia): pré-preenche e
+    // chegou por ?prov=<id> (atalho de cadastro): pré-preenche e
     // a pessoa SÓ cola a apikey (diretriz do dono: "em sistema eu só
     // incluo a apikey") — dados via data-attribute (jinja NUNCA no JS cru)
     (function () {

@@ -254,57 +254,6 @@ def _modelos_do_endpoint(base: str, chave: str):
         return None, {}
 
 
-def gerar_imagem(pid: str, modelo: str, prompt: str,
-                 tamanho: str = "1024x1024", log=print) -> dict:
-    """Geração de IMAGEM por provedor cloud (POST {base}/images/
-    generations — padrão OpenAI Images: b64_json OU url). Devolve o dict
-    no formato do t2i local ({arquivo, pasta, tipo, modelo, segundos}).
-    Sem GPU local envolvida — a z.ai responde 429 claro se o plano não
-    cobre geração (coding plan é texto/visão)."""
-    import time as _t
-    from core import midia as _midia
-    t0 = _t.time()
-    base, chave = _cfg(pid, "BASE_URL"), _cfg(pid, "API_KEY")
-    if not base:
-        raise RuntimeError(f"provedor {pid.upper()} sem PROV_{pid.upper()}_"
-                           "BASE_URL — cadastre a chave no Sistema (☁️)")
-    log(f"🎨 geração EXTERNA [{pid}] {modelo} — GPU local intocada…", "gerar")
-    r = httpx.post(f"{base.rstrip('/')}/images/generations",
-                   headers={"Authorization": f"Bearer {chave}",
-                            "Content-Type": "application/json",
-                            "User-Agent": "ragaroy/1.0"},
-                   json={"model": modelo, "prompt": prompt, "size": tamanho},
-                   timeout=240)
-    if r.status_code != 200:
-        detalhe = ""
-        try:
-            detalhe = str((r.json().get("error") or {}).get("message")
-                          or r.text)[:200]
-        except Exception:
-            detalhe = r.text[:200]
-        raise RuntimeError(f"geração externa {modelo} → HTTP {r.status_code}"
-                           + (f": {detalhe}" if detalhe else ""))
-    item = ((r.json().get("data") or [{}])[0])
-    _midia.SAIDAS["imagem"].mkdir(parents=True, exist_ok=True)
-    alvo = _midia.SAIDAS["imagem"] / f"{pid}_{modelo.replace('/', '_')}_{int(t0)}.png"
-    if item.get("b64_json"):
-        import base64 as _b64
-        alvo.write_bytes(_b64.b64decode(item["b64_json"]))
-    elif item.get("url"):
-        img = httpx.get(item["url"], timeout=120,
-                        headers={"User-Agent": "ragaroy/1.0"})
-        img.raise_for_status()
-        alvo.write_bytes(img.content)
-    else:
-        raise RuntimeError("provedor respondeu 200 sem b64_json nem url")
-    kb = round(alvo.stat().st_size / 1024)
-    log(f"✅ imagem externa salva ({kb} KB)", "salvar")
-    return {"arquivo": alvo.name, "pasta": str(_midia.SAIDAS["imagem"]),
-            "prompt": prompt, "modelo": f"{pid}:{modelo}", "tipo": "imagem",
-            "kb": kb, "segundos": round(_t.time() - t0),
-            "vram_mi": None}
-
-
 def modelos(pid: str, force: bool = False) -> list[dict]:
     """[{nome, visao, ctx, info}] do provedor — /models → manual →
     sugestões. `ctx` = janela de contexto (metadado da API quando existe

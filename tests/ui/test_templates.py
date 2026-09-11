@@ -52,14 +52,11 @@ class TestChatRender:
            "cache": {"online": True, "entradas": 3},
            "modelos_chat": [{"nome": "qwen", "gb": 4.7, "ativo": True}],
            "modelos_chat_grupos": [],
-           # seletor de GERAÇÃO do composer (imagem/vídeo/gif — fluxo F1b):
-           # dicionário por tipo; vazio esconde os optgroups
-           "modelos_geracao": {"imagem": [], "video": []},
            "mcps": []}
 
     def test_composer_completo(self):
         html = _env().get_template("chat.html").render(**self.CTX)
-        for alvo in ('id="pergunta"', 'id="btn-mic"',
+        for alvo in ('id="pergunta"',
                      'class="primario enviar-btn"', 'name="mode"',
                      'name="model"', 'name="colecoes"'):
             assert alvo in html, f"falta {alvo}"

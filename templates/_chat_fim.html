@@ -3,10 +3,9 @@
   <div class="cab-msg"><span class="av-msg">&#129302;</span><span class="quem">assistente{% if modelo %} · {{ modelo }}{% endif %}</span></div>
   <div class="resposta">{{ html | safe }}</div>
   <div class="acoes-msg">
-    <button type="button" class="acao" onclick="painelAbrir()">&#129513; painel — arquivos e mídia</button>
+    <button type="button" class="acao" onclick="painelAbrir()">&#129513; painel — arquivos da resposta</button>
     <button type="button" class="acao" onclick="verResposta(this)" title="ler a resposta em tela ampla (modal) — o painel 📚 fica só com as FONTES">&#9726; resposta</button>
     <button type="button" class="acao" onclick="copiarMensagem(this.closest('.msg'))">&#128203; copiar</button>
-    <a href="#" class="acao" onclick="falarTexto(this.closest('.msg').querySelector('.tts-data').dataset.texto); return false;">&#9654; ouvir</a>
   </div>
   {% if docs %}
   <div class="rodape">
@@ -27,5 +26,4 @@
   {% endif %}
   {% from "_raciocinio.html" import raciocinio %}
   {{ raciocinio(linhas, passos, aberto=false) }}
-  <span class="tts-data" hidden data-texto="{{ resposta[:1200] | e }}"></span>
 </div>

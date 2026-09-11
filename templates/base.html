@@ -6,13 +6,13 @@
   <!-- barra do navegador do celular acompanha o tema (claro/escuro) -->
   <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#101418" media="(prefers-color-scheme: dark)">
-  <title>RagAroy — {% block titulo %}{% endblock %}</title>
+  <title>RagChat — {% block titulo %}{% endblock %}</title>
   <script>
     // 🎨 TEMA ANTES DO CSS (sem flash): a escolha manual (localStorage
-    // "ragaroy.tema" = claro|escuro) vence o automático do sistema
+    // "ragchat.tema" = claro|escuro) vence o automático do sistema
     (function () {
       try {
-        const t = localStorage.getItem("ragaroy.tema");
+        const t = localStorage.getItem("ragchat.tema");
         if (t === "claro" || t === "escuro")
           document.documentElement.setAttribute("data-tema", t);
       } catch (e) {}
@@ -45,13 +45,12 @@
 <body class="{% block classe %}{% endblock %}">
 <header class="topo">
   {# LOGO clicável → chat (tela principal), em TODAS as páginas #}
-  <a class="marca" href="/" title="RagAroy — voltar ao chat">
-    <img src="/static/logo.svg?v={{ v_fav }}" alt="RagAroy" width="26" height="26">
-    <span>RagAroy</span>
+  <a class="marca" href="/" title="RagChat — voltar ao chat">
+    <img src="/static/logo.svg?v={{ v_fav }}" alt="RagChat" width="26" height="26">
+    <span>RagChat</span>
   </a>
   <nav>
     <a href="/" class="{{ 'ativo' if aba == 'chat' }}">Chat</a>
-    <a href="/midia" class="{{ 'ativo' if aba == 'midia' }}">Multimídia</a>
     <a href="/biblioteca" class="{{ 'ativo' if aba == 'biblioteca' }}">Biblioteca</a>
     <a href="/dashboard" class="{{ 'ativo' if aba == 'dashboard' }}">Dashboard</a>
     {% if admin %}<a href="/sistema" class="{{ 'ativo' if aba == 'sistema' }}">Sistema</a>{% endif %}
@@ -84,7 +83,7 @@
         || (html.getAttribute("data-tema") !== "claro" && escuroAg);
     const novo = atualEsc ? "claro" : "escuro";
     html.setAttribute("data-tema", novo);
-    try { localStorage.setItem("ragaroy.tema", novo); } catch (e) {}
+    try { localStorage.setItem("ragchat.tema", novo); } catch (e) {}
     _iconTema();
   };
   function _iconTema() {
@@ -102,14 +101,12 @@
 
   // ⎋ ESC FECHA MODAIS — GLOBAL (pedido do dono: "deixar o esc para sair
   // de modals", padronizado): na ordem, fecha o de cima —
-  // dialog nativo → lightbox → .modal-fundo (classe global) → details.modal.
+  // dialog nativo → .modal-fundo (classe global) → details.modal.
   // Um ESC por camada (ESC de novo fecha o próximo).
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     const dlg = document.querySelector("dialog[open]");
     if (dlg) { dlg.close(); return; }
-    const lb = document.querySelector(".lightbox");
-    if (lb) { lb.remove(); return; }
     const fundo = document.querySelector(".modal-fundo:not([hidden])");
     if (fundo) {
       const fecha = fundo.querySelector("[data-fechar]") || fundo;

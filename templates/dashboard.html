@@ -18,14 +18,13 @@
 
 <section class="cartao">
   <h2>Modelos de linguagem</h2>
-  <p class="descricao">uso medido de CADA modelo que RODOU — chat,
-     multimodal 👁 e geração (telemetria real das chamadas; modelo sem
-     uso não aparece).</p>
+  <p class="descricao">uso medido de CADA modelo que RODOU (telemetria
+     real das chamadas; modelo sem uso não aparece).</p>
   <div class="grade-modelos">
     {% for m in modelos_llm %}
     <div class="modelo-card{{ ' ativo' if m.ativo }}">
       <div class="mc-topo">
-        <b>{{ m.nome }}</b>{% if m.multimodal %} <span title="multimodal (imagem→texto)">👁</span>{% endif %}
+        <b>{{ m.nome }}</b>
         {% if m.ativo %}<span class="selo ativo-agora">● servindo</span>{% endif %}
         {% if m.gb %}<span class="selo">{{ m.gb }} GB</span>{% endif %}
       </div>

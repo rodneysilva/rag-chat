@@ -21,7 +21,7 @@ ARQUIVO = Path(__file__).resolve().parent.parent / "logs" / "uso_llm.jsonl"
 _lock = threading.Lock()
 _local = threading.local()
 
-SERVICOS = ("chat", "ingestao", "seed", "limpeza", "estudio", "manutencao", "sistema")
+SERVICOS = ("chat", "ingestao", "seed", "limpeza", "manutencao", "sistema")
 
 
 def set_servico(nome: str) -> None:

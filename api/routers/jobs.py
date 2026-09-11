@@ -42,9 +42,6 @@ _rota_status("/api/higienizar/status/{job}", _higieniza,
 _rota_status("/api/sandbox/status/{job}", _sbx,
              "Teste de sandbox não encontrado")
 
-_rota_status("/api/midia/status/{job}", _midia,
-             "Análise multimodal não encontrada")
-
 _rota_status("/api/limpeza/status/{job}", _limpeza,
              "Job de limpeza não encontrado")
 

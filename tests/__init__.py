@@ -1,4 +1,4 @@
-"""Suite de testes do RagAroy — 3 camadas.
+"""Suite de testes do RagChat — 3 camadas.
 
 Camadas (rodar a partir da raiz):
     python -m pytest tests/ -x -q              # tudo

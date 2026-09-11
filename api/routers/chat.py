@@ -14,14 +14,9 @@ def hx_contagem(request: Request):
     tot = contadores.totais() or {}
     t = tot.get("total") or {}
     modelo = modelos.servido(modelos.CHAT_PORTA)  # cache 10s: barato
-    vl = False
-    try:
-        vl = bool(modelos.servido(modelos.VL_PORTA))
-    except Exception:
-        pass
     return TEMPLATES.TemplateResponse(request, "_contagem.html",
                                       {"request": request,
-                                       "modelo": modelo, "vl": vl,
+                                       "modelo": modelo,
                                        "entrada": t.get("entrada", 0),
                                        "saida": t.get("saida", 0),
                                        "chamadas": t.get("chamadas", 0)})
@@ -82,17 +77,9 @@ def hx_conversa_copy(request: Request):
 def hx_chat(request: Request, question: str = Form(""), mode: str = Form("hibrido"),
             model: str = Form(""),
             mcps: list[str] = Form(default=[]),
-            colecoes: list[str] = Form(default=[]),
-            midia: str = Form(default=""), audio: UploadFile | None = File(None),
-            referencia: str = Form(default=""),
-            duracao: str = Form(default="")):
+            colecoes: list[str] = Form(default=[])):
     """Inicia o job do chat e devolve o partial INLINE (bolha do usuário +
     tail de polling com o log ao vivo)."""
-    if audio is not None and audio.filename:
-        dados = audio.file.read()
-        texto = voz.transcrever_bytes(dados)
-        if texto.strip():
-            question = texto.strip()
     question = (question or "").strip()
     if not question:
         return TEMPLATES.TemplateResponse(request, "_chatjob.html",
@@ -103,7 +90,7 @@ def hx_chat(request: Request, question: str = Form(""), mode: str = Form("hibrid
     # crus (stem) da estacao travam a troca na VPS — ignora silenciosamente.
     # EXTERNO ("glm:glm-4.6") NÃO é alias: passa INTEIRO (o override da
     # execução cuida do resto; aqui só não podemos descartar)
-    _model_raw = (model or "").strip()   # valor ORIGINAL p/ geração de mídia
+    _model_raw = (model or "").strip()
     _alias_ok = _model_raw in modelos.REGISTRO if _model_raw else False
     model = _model_raw if (_alias_ok or ":" in _model_raw) else None
     # HISTÓRICO da sessão salva (fonte da verdade no servidor): a webui
@@ -140,124 +127,7 @@ def hx_chat(request: Request, question: str = Form(""), mode: str = Form("hibrid
     sid = _sessao_id(request, _stub_sid, criar=True)
     corpo = QueryIn(question=question, mode=mode, model=model, mcps=mcps or [],
                     collections=colecoes or [], history=_hist or None,
-                    sessao=sid, job=True,
-                    anexo_imagem=(referencia.strip() or None))
-    # 🎨🚫 GERAÇÃO SAIU DO CHAT (pedido do dono 27/08: "geração de imagem e
-    # vídeo fica só no Multimídia, o retorno da tela do chat é texto") — o
-    # composer não oferece mais; páginas ANTIGAS abertas que ainda mandem
-    # caem neste aviso (a análise i2t segue: retorno é TEXTO)
-    if midia in ("imagem", "video", "gif", "i2v", "i2g"):
-        return TEMPLATES.TemplateResponse(
-            request, "_job.html",
-            {"request": request, "kind": "erro", "job": "erro",
-             "rotulo": f"gerar {midia}", "linhas": [], "running": False,
-             "erro": "geração de imagem/vídeo agora mora no módulo 👁 "
-                     "Multimídia — abra no menu (ou /midia): análise E "
-                     "geração (🖼 Flux · 🎬 Wan · 🎞 gif) com log ao vivo"})
-    if midia in ("i2t",):
-        # 👁 i2t é RESPOSTA DE CHAT (layout de mensagem + raciocínio — era
-        # card de TAREFA "✓ concluído · análise: …" cru; pedido do dono
-        # "por que o chat perdeu o layout?"): job no registry do CHAT com
-        # a análise como answer
-        if not referencia.strip():
-            return TEMPLATES.TemplateResponse(
-                request, "_job.html",
-                {"request": request, "kind": "erro", "job": "erro",
-                 "rotulo": "analisar imagem", "linhas": [], "running": False,
-                 "erro": "a análise precisa de uma imagem — clique em "
-                         "📎 subir imagem e tente de novo"})
-        job = _query.novo_id()
-
-        def _fab_i2t(payload: dict):
-            jid = payload["job"]
-
-            def rodar():
-                # ⚠️ o PARÂMETRO `midia` (str do form) SOMBREIA o módulo no
-                # closure — import local com alias resolve
-                from core import midia as _midia
-                _query.log(jid, f"👁 análise multimodal de "
-                               f"{Path(payload['referencia']).name}"
-                               + (f" com {payload['modelo']}"
-                                  if payload["modelo"] else " (local)"),
-                           etapa="análise")
-                try:
-                    alvo = _midia.ENTRADA / Path(payload["referencia"]).name
-                    if not alvo.exists():
-                        alvo = Path(payload["referencia"])
-                    modelo = payload["modelo"]
-                    # LOCAL (sem ":") em CONTAINER -> AGENTE do host (a GPU
-                    # e o GGUF vivem na estacao; direto aqui procura
-                    # D:\models no Linux e morre). EXTERNO prov:nome NA API.
-                    if config.EM_CONTAINER and ":" not in modelo:
-                        import base64 as _b64
-                        with open(alvo, "rb") as f:
-                            img_b64 = _b64.b64encode(f.read()).decode()
-                        t_vl = time.time()
-                        r = modelos._chamar_agente(
-                            "/visao", {"b64": img_b64,
-                                       "nome": Path(alvo).name,
-                                       "pergunta": payload["pergunta"]},
-                            timeout=420)
-                        analise = r.get("descricao", "")
-                        # REGRAVA o multimodal na telemetria DA VPS (o
-                        # evento da estacao nao atravessa o tunel — sem
-                        # isto o Dashboard nunca via o qwen-vl local)
-                        try:
-                            u = r.get("usage") or {}
-                            telemetria.evento(
-                                "llm", "qwen2.5-vl (multimodal)",
-                                entrada=int(u.get("entrada") or 0),
-                                saida=int(u.get("saida") or 0),
-                                duracao_s=round(time.time() - t_vl, 1),
-                                modelo="qwen2.5-vl-7b",
-                                servico="multimodal")
-                        except Exception:
-                            pass
-                    else:
-                        analise = _midia.legendar_imagem(
-                            str(alvo), payload["pergunta"] or None,
-                            modelo=modelo,
-                            log=lambda m, g="": _query.log(
-                                jid, m, **({"etapa": g} if g else {})))
-                    _query.concluir(jid, result={
-                        "question": payload["pergunta"],
-                        "answer": analise or "(a análise não retornou texto)",
-                        "mode": "i2t", "docs": [], "cache": None,
-                        "model": None, "pensamentos": None,
-                        "tokens": {"entrada": 0, "saida": 0, "chamadas": 0}})
-                except Exception as e:
-                    _query.concluir(jid, error=str(e)[:400])
-            return rodar
-
-        _despachar(_fab_i2t, "i2t",
-                   {"referencia": referencia.strip(), "pergunta": question,
-                    "modelo": _model_raw.strip(), "job": job}, _query)
-        try:
-            anterior = sessions.get_session(sid) or {}
-            bruto = anterior.get("raw") or []
-            bruto.append({"role": "user", "content": question})
-            sessions.save_session(bruto, sid=sid,
-                                  owner=anterior.get("owner", ""),
-                                  titulo="", modo=mode, colecoes=colecoes,
-                                  aprovacoes=anterior.get("aprovacoes", {}),
-                                  raw=bruto,
-                                  job_ativo={"kind": "chat", "job": job})
-        except Exception:
-            pass
-        linhas = _query.status(job, 0, "")["lines"]
-        parcial = TEMPLATES.TemplateResponse(
-            request, "_chat_inicio.html",
-            {"request": request, "job": job, "linhas": linhas,
-             "running": True, "pergunta": question, "sid": sid,
-             "otimista": request.headers.get("x-otimista") == "1"})
-        # cookie do sid: o _stub_sid foi criado ANTES (linha do corpo) —
-        # ler DELE (resp_stub só nasce no fluxo de texto adiante)
-        _sc = _stub_sid.headers.get("set-cookie", "")
-        if _sc.startswith(SESSAO_COOKIE + "="):
-            _sid = _sc.split("=", 1)[1].split(";", 1)[0]
-            parcial.set_cookie(SESSAO_COOKIE, _sid, max_age=30 * 86400,
-                               httponly=True, samesite="lax")
-        return parcial
+                    sessao=sid, job=True)
     try:
         r = query(corpo)
     except HTTPException as e:
@@ -401,14 +271,13 @@ def hx_nova():
 
 
 @router.post("/hx/prompt-melhorar")
-@router.post("/hx/prompt-midia")   # compat: páginas abertas no deploy ainda chamam
 def hx_prompt_melhorar(request: Request, ideia: str = Form(""),
-                        tipo: str = Form(""), referencia: str = Form("")):
+                        tipo: str = Form("")):
     """✨ do composer: a LLM reescreve o RASCUNHO na melhor forma (spec
-    prompt_melhoria.md — universal: pergunta, código, instrução ou mídia).
-    `tipo` é DICA opcional (vem do seletor de mídia quando ativo).
+    prompt_melhoria.md — universal: pergunta, código, instrução).
+    `tipo` é DICA opcional.
     CONTEXTO = TODAS as mensagens enviadas pelo USUÁRIO na conversa
-    (respostas do assistente NÃO entram) + a referência selecionada."""
+    (respostas do assistente NÃO entram)."""
     _usuario(request)
     from core import prompt as _prompt
     tipo_dica = (tipo or "").strip()
@@ -435,9 +304,6 @@ def hx_prompt_melhorar(request: Request, ideia: str = Form(""),
         contexto = "\n".join(trocas)
     except Exception:
         pass
-    ref = (referencia or "").strip()
-    if ref:
-        contexto += f"\nREFERÊNCIA SELECIONADA no painel: {ref}"
     # ⚡ FALLBACK EXTERNO (pedido do dono 28/08): a ✨ usava SÓ a LLM local
     # — com ela desligada o botão ficava "…" eterno. Local fora do ar → o
     # PRIMEIRO modelo de conversa dos provedores cadastrados assume.
@@ -559,21 +425,9 @@ def hx_conversa_apagar(sid: str, request: Request):
                 try:
                     _conv.log(jid, f"🗑️ apagando a conversa "
                                    f"“{(p.get('titulo') or alvo[:8])[:60]}”…")
-                    dados2 = sessions.get_session(alvo) or {}
-                    apagados = []
-                    for m in (dados2.get("raw") or []):
-                        mid = m.get("midia") or {}
-                        if mid.get("arquivo") and mid.get("pasta"):
-                            alvo_arq = Path(mid["pasta"]) / Path(mid["arquivo"]).name
-                            if alvo_arq.is_file():
-                                alvo_arq.unlink()
-                                apagados.append(alvo_arq.name)
-                    if apagados:
-                        _conv.log(jid, f"🧹 {len(apagados)} mídia(s) apagada(s) do disco")
                     sessions.delete_session(alvo)
                     _conv.log(jid, "✓ conversa apagada")
-                    _conv.concluir(jid, result={"sid": alvo,
-                                                "midias": len(apagados)})
+                    _conv.concluir(jid, result={"sid": alvo})
                 except Exception as e:
                     _conv.log(jid, f"✕ falhou: {str(e)[:160]}")
                     _conv.concluir(jid, error=str(e))
@@ -599,64 +453,28 @@ def hx_conversa_apagar(sid: str, request: Request):
     return resp
 
 
-@router.post("/hx/voz")
-def hx_voz(request: Request, audio: UploadFile = File(...)):
-    """Áudio (arquivo) → texto no campo (whisper local)."""
-    _usuario(request)
-    try:
-        dados = audio.file.read()
-        if not dados:
-            raise ValueError("áudio vazio")
-        texto = voz.transcrever_bytes(dados)
-        if not (texto or "").strip():
-            raise ValueError("nada transcrito — só silêncio?")
-        return HTMLResponse(
-            f'<textarea id="pergunta" name="question" required>'
-            f'{texto.strip()}</textarea>')
-    except Exception as e:
-        return HTMLResponse(f'<p class="erro-texto">falha na transcrição: {e}</p>',
-                            status_code=200)
-
-
-@router.get("/hx/tts")
-def hx_tts(texto: str, request: Request):
-    _usuario(request)
-    wav = voz.falar_bytes(texto[:2000])
-    return Response(wav, media_type="audio/wav")
-
-
-@router.post("/api/visao")
-def visao(body: VisaoIn):
-    """Descreve uma imagem anexada no chat (modelo de visão :8082) SEM
-    indexar nada — o texto vira contexto da sessão, não coleção.
-    Em CONTAINER, a análise roda NO HOST via agente (:8010)."""
-    if config.EM_CONTAINER:
-        try:
-            import base64 as _b64
-            with open(body.arquivo, "rb") as f:
-                img_b64 = _b64.b64encode(f.read()).decode()
-            r = modelos._chamar_agente("/visao",
-                                       {"b64": img_b64,
-                                        "nome": Path(body.arquivo).name,
-                                        "pergunta": body.pergunta},
-                                       timeout=420)
-            _desc = r.get("descricao", "")
-            # 🛡️ guard: servidor de visão SEM mmproj devolve o ERRO como se
-            # fosse descrição (bug real) — vira 503 com orientação, nunca
-            # entra no contexto como "descrição" da imagem
-            if "does not support image input" in (_desc or ""):
-                raise RuntimeError(
-                    "o servidor de visão no ar não aceita imagens (sem "
-                    "mmproj) — reinicie a visão no Sistema (🖼️ subir visão)")
-            return {"descricao": _desc}
-        except RuntimeError as e:
-            raise HTTPException(status_code=503, detail=str(e))
-        except OSError as e:
-            raise HTTPException(status_code=503, detail=str(e))
-    try:
-        return {"descricao": midia.legendar_imagem(body.arquivo, body.pergunta)}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
+@router.post("/api/zip")
+def zip_arquivos(body: ZipIn):
+    """Empacota os arquivos de código de uma resposta num .zip — gerado só
+    quando o operador pede (não onera toda resposta). O CAMINHO relativo de
+    cada arquivo (src/domain/…) vira pasta dentro do zip, como no retorno."""
+    import io
+    import zipfile
+    if not body.arquivos:
+        raise HTTPException(status_code=400, detail="nenhum arquivo informado")
+    buf = io.BytesIO()
+    usados: set[str] = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for a in body.arquivos[:100]:
+            nome = _sanear_caminho(str(a.get("nome", "arquivo.txt")))
+            while nome in usados:  # mesmo nome 2x: sufixo numérico
+                nome = f"({len(usados)})".join(nome.rsplit(".", 1)) \
+                       if "." in nome else f"{nome}({len(usados)})"
+            usados.add(nome)
+            z.writestr(nome, str(a.get("conteudo", ""))[:2_000_000])
+    return Response(content=buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="projeto.zip"',
+                             "Cache-Control": "no-store"})
 
 
 @router.post("/api/anexo/texto")

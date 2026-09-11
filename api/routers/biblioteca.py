@@ -63,51 +63,16 @@ async def hx_aquisicao(request: Request, fonte: str = Form("pesquisa"),
 
 @router.get("/hx/job/{kind}/{job}")
 def hx_job(kind: str, job: str, request: Request, r: int = 0):
-    """Polling genérico: pesquisa/preview/ingest/seed/limpeza/tarefa — log
+    """Polling genérico: pesquisa/preview/ingest/seed/limpeza — log
     INLINE linha por linha; ao concluir mostra o resultado (e o link da
-    revisão quando há preview).
-
-    AGENTE reindando/reiniciando (tarefa delegada): em vez de morrer com
-    "job não encontrado", o card entra em "reconectando…" e SEGUE polando
-    (bound de 12 tentativas via ?r=N) — o agente voltando no meio não
-    mata mais o acompanhamento."""
+    revisão quando há preview)."""
     try:
-        if kind == "tarefa":
-            s = tarefas.status(job, 0)
-            if s is None and config.EM_CONTAINER:
-                # tarefa DELEGADA ao agente do host: o registro vive LÁ —
-                # o polling transparentemente consulta o agente (o log da
-                # geração aparece no chat linha por linha, como local).
-                try:
-                    import httpx as _hx
-                    rr = _hx.get(f"{modelos._agente_host()}/tarefas/status/{job}",
-                                 params={"cursor": 0}, timeout=8,
-                                 headers=modelos._agente_headers())
-                    if rr.status_code == 200:
-                        s = rr.json()
-                except Exception:
-                    pass
-            if s is None:
-                if config.EM_CONTAINER and r < 12:
-                    return TEMPLATES.TemplateResponse(
-                        request, "_job.html",
-                        {"request": request, "kind": kind, "job": job,
-                         "rotulo": "geração", "running": True,
-                         "reconectando": True, "r": r + 1,
-                         "linhas": [{"msg": "⚠️ agente da GPU indisponível "
-                                            "(reiniciando?) — reconectando…",
-                                     "etapa": "aguardando"}],
-                         "progresso": None, "etapa_atual": "aguardando",
-                         "eta_s": None, "erro": None, "resumo_texto": "",
-                         "preview_pid": None, "resultado_midia": None})
-                raise HTTPException(status_code=404, detail="tarefa não encontrada")
-        else:
-            reg = {"pesquisa": _pesquisa, "preview": _preview, "ingest": _ingest,
-                   "seed": _seed, "limpeza": _limpeza, "manutencao": _manutencao,
-                   "higienizar": _higieniza}.get(kind)
-            if reg is None:
-                raise HTTPException(status_code=404, detail="tipo de job desconhecido")
-            s = reg.status(job, 0, "")
+        reg = {"pesquisa": _pesquisa, "preview": _preview, "ingest": _ingest,
+               "seed": _seed, "limpeza": _limpeza, "manutencao": _manutencao,
+               "higienizar": _higieniza}.get(kind)
+        if reg is None:
+            raise HTTPException(status_code=404, detail="tipo de job desconhecido")
+        s = reg.status(job, 0, "")
     except (HTTPException, JobNaoEncontrado):
         s = {"running": False, "lines": [], "result": None,
              "error": "job não encontrado"}
@@ -127,14 +92,11 @@ def hx_job(kind: str, job: str, request: Request, r: int = 0):
                          "etapa": "aguardando"}],
              "progresso": None, "etapa_atual": "aguardando", "eta_s": None,
              "erro": None, "resumo_texto": "", "segundos": None,
-             "preview_pid": None, "resultado_midia": None})
+             "preview_pid": None})
     if s.get("error") == "job não encontrado":
         s["error"] = ("job não encontrado — a API reiniciou e este job se "
                       "perdeu; dispare novamente")
     res = s.get("result") or {}
-    if kind == "tarefa" and not s["running"] and not s.get("error"):
-        _limpar_job_ativo(job)          # antes do registrar (este CONSOME o mapa)
-        _registrar_midia_sessao(job, res)
     resumo = ""
     if not s["running"] and not s.get("error"):
         if res.get("preview"):
@@ -153,17 +115,15 @@ def hx_job(kind: str, job: str, request: Request, r: int = 0):
     ctx = {"request": request, "kind": kind, "job": job, "rotulo": kind,
            "linhas": _linhas_visual(s["lines"]), "running": s["running"],
            "erro": s.get("error"), "resumo_texto": resumo,
-           # progresso REAL do motor (sd-cli/whisper parseados no core):
-           # 0..1 → %; None = motor não reporta (só o log rola)
+           # progresso REAL do job (parseado no core):
+           # 0..1 → %; None = job não reporta (só o log rola)
            "progresso": (round((s.get("progresso") or 0) * 100)
                          if isinstance(s.get("progresso"), (int, float)) else None),
            "etapa_atual": s.get("etapa"),
            "eta_s": s.get("eta_s"),
            "r": r,
            "segundos": (res.get("segundos") if isinstance(res, dict) else None),
-           "preview_pid": (res.get("preview") if isinstance(res, dict) else None),
-           "resultado_midia": ({ "tipo": res.get("tipo"), "arquivo": res.get("arquivo")}
-                               if isinstance(res, dict) and res.get("arquivo") else None)}
+           "preview_pid": (res.get("preview") if isinstance(res, dict) else None)}
     return TEMPLATES.TemplateResponse(request, "_job.html", ctx)
 
 

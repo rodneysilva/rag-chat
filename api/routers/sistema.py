@@ -32,9 +32,6 @@ async def hx_settings(request: Request):
             except ValueError:
                 erros.append(f"{chave}: '{valor}' não é {('inteiro' if tipo == 'int' else 'número')}")
                 continue
-        if chave == "GPU_MODO" and valor not in ("todos", "somente_llms"):
-            erros.append("GPU_MODO: use 'todos' ou 'somente_llms'")
-            continue
         config.set_env_inplace(chave, valor)
         trocas += 1
     config.reload()
@@ -98,14 +95,12 @@ def modelo_ativo():
     """🧠 Qual modelo de conversa está NO AR AGORA — lido DIRETO do servidor
     (OpenAI-compatible /v1/models do llama-server, via túnel na produção;
     cache 10 s). É a fonte da verdade da UI: badge + combobox refletem
-    isto, nunca um valor salvo no cliente. Inclui visão/embedding/difusores
+    isto, nunca um valor salvo no cliente. Inclui embedding
     (mesma fonte única de `modelos_ativos`)."""
     a = modelos_ativos()
     return {"modelo": a["chat"], "provider": "llama-server",
             "online": bool(a["chat"]),
-            "visao": a["visao"], "embed": a["embed"],
-            "visao_externa": a.get("visao_externa", []),
-            "difusores": a["difusores"], "vram_mi": a["vram_mi"]}
+            "embed": a["embed"], "vram_mi": a["vram_mi"]}
 
 
 @router.post("/api/modelo/ativo")
@@ -153,16 +148,6 @@ def status():
 
     from concurrent.futures import ThreadPoolExecutor
 
-    def _svc_visao():
-        try:
-            return {"name": "Multimodal (imagem→texto)",
-                    "ok": not modelos.vl_manual_off(),
-                    "detail": ("desligado manualmente (Sistema)"
-                               if modelos.vl_manual_off()
-                               else "sobe na 1ª análise de imagem")}
-        except Exception as e:
-            return {"name": "Multimodal", "ok": False, "detail": str(e)[:60]}
-
     def _svc_scan():
         try:
             return _scan_collections(QdrantClient(
@@ -176,7 +161,6 @@ def status():
             "qdrant": ex.submit(_check, "Qdrant", f"{config.QDRANT_URL}/healthz"),
             "llm": ex.submit(_check, "LLM", f"{config.LLM_BASE_URL}/models"),
             "embed": ex.submit(_check, "Embedding", f"{config.EMBED_BASE_URL}/models"),
-            "visao": ex.submit(_svc_visao),
             "_scan": ex.submit(_svc_scan),
         }
         services = {k: f.result(timeout=10) for k, f in fut.items() if k != "_scan"}
@@ -188,10 +172,8 @@ def status():
         "collection": config.COLLECTION,
         "modelo": config.LLM_MODEL,      # modelo de conversa ativo (:8090)
         "embedding": config.EMBED_MODEL, # embedding em uso (:8081)
-        "gpu_modo": config.GPU_MODO,     # 'todos' | 'somente_llms' (badge 🎮)
         "embed_manual_off": modelos.embed_manual_off(),
         "llm_manual_off": modelos.llm_manual_off(),
-        "vl_manual_off": modelos.vl_manual_off(),
         "mock": bool(getattr(config, "MOCK_LLM", False)),  # fita 🧪 na webui
     }
     _STATUS_CACHE.update(t=agora, dados=dados)
@@ -336,43 +318,6 @@ def embed_desligar(request: Request):
     if config.EM_CONTAINER:
         return modelos._chamar_agente("/embed/desligar", timeout=60)
     return modelos.desligar_embedding_manual()
-
-
-@router.post("/api/vl/ligar")
-def vl_ligar(request: Request):
-    """Religa a visão (:8082, remove o marker) e a pré-aquece (sobe o
-    Qwen2.5-VL agora, ~1 min). EXCLUSIVO do administrador."""
-    _exigir_admin(request)
-    if config.EM_CONTAINER:
-        return modelos._chamar_agente("/vl/ligar", timeout=420)
-    return modelos.ligar_vl_manual()
-
-
-@router.post("/api/vl/desligar")
-def vl_desligar(request: Request):
-    """Desliga a visão (:8082) e BLOQUEIA o ciclo on-demand — análises de
-    imagem falham com erro claro até religar. EXCLUSIVO do administrador."""
-    _exigir_admin(request)
-    if config.EM_CONTAINER:
-        modelos._chamar_agente("/porta/derrubar",
-                               {"porta": modelos.VL_PORTA}, timeout=60)
-        return modelos.desligar_vl_manual(ja_derrubado=True)
-    return modelos.desligar_vl_manual()
-
-
-@router.post("/api/gpu/modo")
-def gpu_modo(body: GpuModoIn, request: Request):
-    """Alterna o modo de uso da GPU: 'todos' (aberta) ou 'somente_llms'
-    (difusão/whisper recusados). Persiste no .env. EXCLUSIVO do administrador."""
-    _exigir_admin(request)
-    modo = body.modo.strip()
-    if modo not in ("todos", "somente_llms"):
-        raise HTTPException(status_code=400,
-                            detail="modo inválido: 'todos' ou 'somente_llms'")
-    config.set_env_inplace("GPU_MODO", modo)
-    config.reload()
-    print(f"🎮 GPU em modo '{modo}'")
-    return {"modo": config.GPU_MODO}
 
 
 @router.post("/api/specs/reload")

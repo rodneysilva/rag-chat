@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serviços LLM do RagAroy — sobe o embedding (bge-m3, :8081) e UM modelo
+"""Serviços LLM do RagChat — sobe o embedding (bge-m3, :8081) e UM modelo
 de conversa (:8090) com llama-server, em QUALQUER sistema operacional
 (Windows, Linux, macOS) — 100% stdlib, sem dependência do projeto.
 

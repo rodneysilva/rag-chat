@@ -1,4 +1,4 @@
-/* RagAroy — UI (HTMX + Jinja). Um arquivo. Sem framework.
+/* RagChat — UI (HTMX + Jinja). Um arquivo. Sem framework.
    ═══ ARQUITETURA CSS — ITCSS em cascade layers nativos (@layer), zero
    build (docs/arquitetura.md §Layout). Ordem das camadas (a PRIMEIRA
    declarada tem MENOR precedência — a lista abaixo É o contrato):
@@ -100,7 +100,7 @@ header.topo .direita { margin-left: auto; display: flex; gap: .5rem; align-items
 main {
   max-width: none; width: 100%; margin: 0;
   /* PADDING UNICO (modulo-shell): TODOS os modulos respiram igual —
-     chat/multimidia/biblioteca/dashboard/sistema na mesma regua
+     chat/biblioteca/dashboard/sistema na mesma regua
      (fim do 1rem+clamp x .55rem/.8rem divergentes medidos) */
   padding: .6rem .8rem .7rem;
 }
@@ -113,24 +113,23 @@ main {
 /* ═══ .modulo-shell — CONTRATO UNICO DE SHELL (2.2 da normalizacao):
    TODO modulo conversacional usa o MESMO grid (sidebar 13.5rem + 1fr) e
    a MESMA viewport (100dvh - topo, overflow hidden, scroll interno).
-   .chat-shell e .midia-grid viram ALIASES do contrato — nao existem
-   mais regras separadas para cada um. ═══ */
+   .chat-shell e alias do contrato. ═══ */
 @layer layout {
-  body.pagina-chat main, body.pagina-midia main {
+  body.pagina-chat main {
     display: flex; flex-direction: column;
     height: calc(100dvh - var(--altura-topo, 3.4rem));
     overflow: hidden; min-height: 0;
   }
-  .modulo-shell, .chat-shell, .midia-grid {
+  .modulo-shell, .chat-shell {
     flex: 1; min-height: 0; width: 100%; margin: 0;
     display: grid; gap: .7rem;
     grid-template-columns: 13.5rem minmax(0, 1fr);
     align-items: stretch;
   }
   @media (max-width: 55rem) {
-    .modulo-shell, .chat-shell, .midia-grid { grid-template-columns: 1fr; }
+    .modulo-shell, .chat-shell { grid-template-columns: 1fr; }
   }
-  body.pagina-chat .chat-shell, body.pagina-midia .midia-grid {
+  body.pagina-chat .chat-shell {
     /* alias: nada alem do contrato */
   }
 }
@@ -215,18 +214,17 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
    .assistente ocupa a largura total. NÃO criar regras de conversa fora
    daqui (a duplicação era a causa de layouts divergentes). */
 #conversa, #pensando { display: flex; flex-direction: column; gap: .9rem; margin-bottom: 1rem; }
-/* ═══ LAYOUT GLOBAL .app-shell (padrão multimídia p/ TODO módulo
-    conversacional — pedido do dono 28/08): main = altura da viewport MENOS
+/* ═══ LAYOUT GLOBAL .app-shell: main = altura da viewport MENOS
     o topbar; colunas flex; quem rola é SÓ o conteúdo interno (sidebar
     full-height, scrollbar apenas onde excede). Camada 1 (settings) já
     define as vars; esta é a camada de LAYOUT. ═══ */
-body.pagina-chat main, body.pagina-midia main {
+body.pagina-chat main {
   display: flex; flex-direction: column;
   height: calc(100dvh - var(--altura-topo, 3.4rem));
   overflow: hidden;                       /* nada de página rolando inteira */
   padding: .6rem .8rem .7rem; min-height: 0;
 }
-body.pagina-chat .chat-shell, body.pagina-midia .midia-grid {
+body.pagina-chat .chat-shell {
   flex: 1; min-height: 0; width: 100%; margin: 0;
 }
 .chat-shell { align-items: stretch; }
@@ -244,8 +242,6 @@ body.pagina-chat #composer {
   position: static; box-shadow: none; border-top: 1px solid var(--borda);
   border-bottom: none; flex: none;
 }
-/* multimídia segue o MESMO contrato */
-body.pagina-midia .midia-coluna { height: auto; flex: 1; }
 
 /* ═══ CHAT = PÁGINA NORMAL (pedido do dono): scroll LIVRE do documento —
    a página inteira rola como qualquer outra; nada de viewport travado
@@ -264,10 +260,9 @@ body.pagina-chat #conversa {
 
 /* ═══════════ CHAT-SHELL: drawer conversas | coluna | split docs ═══════════
    Altura NATURAL: as colunas crescem com o conteúdo (a página rola). */
-/* (chat-shell/midia-grid agora sao ALIASES do .modulo-shell no @layer
+/* (chat-shell agora e ALIAS do .modulo-shell no @layer
    layout — regras flex/grid separadas removidas na normalizacao 2.2) */
 .chat-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.midia-coluna { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 /* composer no FLUXO do documento e COLADO NO RODAPÉ (pedido do dono): a
    página rola livre e o campo de pergunta fica SEMPRE visível embaixo —
    sticky bottom com o mesmo fundo da página (não vira "flutuante"). */
@@ -275,9 +270,6 @@ body.pagina-chat #conversa {
 .chat-sub { display: flex; gap: .5rem; align-items: center; padding: 0 .1rem .5rem; }
 .badge-cache { font-size: .7rem; color: var(--suave); border: 1px solid var(--borda);
   border-radius: 99px; padding: .12rem .55rem; white-space: nowrap; }
-.toggle-voz { display: inline-flex; gap: .35rem; align-items: center; font-size: .72rem;
-  color: var(--suave); cursor: pointer; user-select: none; }
-.toggle-voz input { accent-color: var(--acento); }
 
 /* drawer de conversas (esquerda — SEMPRE VISÍVEL estilo Open WebUI).
    Com o SCROLL LIVRE da página: colunas flutuam (sticky) com altura
@@ -343,7 +335,7 @@ body.pagina-chat #conversa {
    abre SOBRE o palco (overlay fixo na borda direita), igual ao padrao que
    o mobile ja tinha. Abrir/fechar NAO altera as proporcoes da conversa —
    o split inline empurrava o palco e mudava a largura das bolhas. O
-   botao "painel" (e o clique em fonte/midia) abre; "retrair" fecha. ═══ */
+   botao "painel" (e o clique em fonte) abre; "retrair" fecha. ═══ */
 body.pagina-chat .split-docs {
   position: fixed; top: var(--altura-topo); bottom: .6rem; right: .6rem;
   z-index: 40; max-height: none;
@@ -411,23 +403,7 @@ body.pagina-chat .split-docs {
   border: 1px solid var(--borda); border-radius: 7px; background: none;
   color: var(--suave); cursor: pointer; }
 .cod-btn:hover { color: var(--acento); border-color: var(--acento); }
-/* chip da mídia incluída no contexto (composer) */
-.chip-contexto { display: flex; gap: .4rem; align-items: center; margin-top: .45rem;
-  padding: .22rem .55rem; border: 1px dashed var(--acento); border-radius: 8px;
-  font-size: .74rem; color: var(--acento); overflow-wrap: anywhere; }
-/* ações do item de mídia (incluir no contexto) */
-.midia-acoes { margin-left: auto; display: flex; gap: .3rem; }
-.midia-acoes .incluir-ctx { font-size: .66rem; padding: .12rem .45rem;
-  border: 1px solid var(--borda); border-radius: 7px; background: none;
-  color: var(--suave); cursor: pointer; }
-.midia-acoes .incluir-ctx:hover { color: var(--acento); border-color: var(--acento); }
-img.midia.clicavel, .split-corpo img.midia.clicavel { cursor: zoom-in; }
-/* lightbox: imagem ampliada em tela cheia (clique fecha) */
-.lightbox { position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.82);
-  display: flex; align-items: center; justify-content: center; cursor: zoom-out;
-  padding: 2rem; }
-.lightbox img { max-width: 100%; max-height: 100%; border-radius: 10px; }
-/* barra de progresso REAL do motor (sd-cli/whisper) nos jobs de mídia */
+/* barra de progresso REAL dos jobs (etapa/ETA quando o motor reporta) */
 .prog-info { margin-top: .4rem; display: flex; align-items: center; gap: .5rem;
   flex-wrap: wrap; }
 .pbar { flex: 1 1 8rem; height: .5rem; border-radius: 99px; overflow: hidden;
@@ -435,7 +411,7 @@ img.midia.clicavel, .split-corpo img.midia.clicavel { cursor: zoom-in; }
 .pbar i { display: block; height: 100%; width: 0;
   background: linear-gradient(90deg, var(--acento), color-mix(in srgb, var(--acento) 55%, transparent));
   transition: width .6s ease; }
-/* job "reconectando ao agente": indeterminado e amarelado */
+/* job "reconectando" (API reiniciou; a fila retoma): indeterminado e amarelado */
 .pbar-job.rec i { background: var(--aviso); }
 /* ACCORDION de documentos DENTRO do card da coleção (o drawer fixo
    quebrava a tela e o fechar não funcionava — agora é inline, fecha
@@ -486,11 +462,6 @@ img.midia.clicavel, .split-corpo img.midia.clicavel { cursor: zoom-in; }
   border-radius: 99px; padding: .12rem .6rem; }
 .btn-fontes:hover { background: var(--acento-suave); }
 
-/* microfone */
-.mic-zona { display: flex; gap: .45rem; align-items: center; }
-.mic-btn { font-size: 1rem; }
-.mic-btn.gravando { color: #fff; background: var(--erro);
-  border-color: var(--erro); animation: pulso 1s infinite alternate; }
 .mini-btn { border: 1px solid var(--borda); border-radius: 8px; background: var(--card);
   width: 1.9rem; height: 1.9rem; display: inline-grid; place-items: center; cursor: pointer;
   transition: background .15s, border-color .15s; }
@@ -604,7 +575,6 @@ details[open] > summary { color: var(--texto); }
   color: var(--texto); border-radius: 10px; padding: .5rem .8rem; font-size: .82rem; margin-bottom: 1rem; }
 audio { width: 100%; max-width: 26rem; }
 .erro-texto { color: var(--erro); font-size: .85rem; }
-img.midia, video.midia { max-width: 100%; border-radius: 10px; border: 1px solid var(--borda); }
 
 /* ═══════════ RESPONSIVO — camada extra (nada muda no desktop) ═══════════ */
 
@@ -750,15 +720,7 @@ img.midia, video.midia { max-width: 100%; border-radius: 10px; border: 1px solid
 @media (max-width: 40rem) {
   .colecoes-grid { max-height: 7rem; grid-template-columns: 1fr 1fr; }
 }
-/* CHIP da imagem anexada (📎 subir imagem do composer): nome do arquivo
-   com clique para remover */
-.chip-ref {
-  font-size: .72rem; color: var(--acento); cursor: pointer; user-select: none;
-  border: 1px dashed var(--acento); border-radius: 8px; padding: .18rem .5rem;
-  max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.chip-ref:hover { color: var(--erro); border-color: var(--erro); }
-/* CHIP DE DICA DE PROMPT (guia de mídia): clique insere no campo */
+/* CHIP DE DICA DE PROMPT (Sistema/roteiros do app): clique preenche/usa */
 .chip-prompt {
   display: inline-block; margin: .12rem .18rem .12rem 0; padding: .14rem .5rem;
   border: 1px solid var(--borda); border-radius: 99px; background: var(--bg);
@@ -820,7 +782,7 @@ img.midia, video.midia { max-width: 100%; border-radius: 10px; border: 1px solid
   flex: 1; min-width: 0; resize: none; min-height: 2.6rem; max-height: 12rem;
   padding: .55rem .75rem; font-size: 1rem; line-height: 1.45;
 }
-.mic-btn, .enviar-btn { flex: 0 0 auto; width: 2.7rem; height: 2.7rem;
+.enviar-btn { flex: 0 0 auto; width: 2.7rem; height: 2.7rem;
   border-radius: 10px; display: grid; place-items: center; font-size: 1.05rem; }
 .enviar-btn { padding: 0; }
 .controles-linha { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
@@ -904,23 +866,6 @@ figure.cod code { background: none; padding: 0; border: 0;
   background:transparent; cursor:pointer; }
 .acao:hover { border-color:var(--acento); color:var(--fg); background:var(--acento-suave); }
 
-/* --- MULTIM
-
-/* ═══ MULTIMÍDIA (conversa): fullscreen acompanhando o topbar ═══ */
-/* .midia-grid: alias do .modulo-shell (contrato unico @layer layout) */
-@media (max-width: 55rem) {
-  .midia-grid { grid-template-columns: 1fr; }
-}
-/* midia-coluna: altura vem do stretch do .modulo-shell */
-.midia-coluna > #m-conversa {
-  flex: 1 1 auto; min-height: 0; overflow: auto;
-}
-@media (max-width: 55rem) {
-  .midia-coluna { height: auto; }
-  .midia-coluna > #m-conversa { max-height: 56vh; }
-  #m-sessoes { max-height: 12rem !important; }
-}
-
 /* ═══ 🎨 TEMA (toggle do topo) + ⎋ MODAIS GLOBAIS ═══ */
 .mini-btn { cursor: pointer; border: 1px solid var(--borda); background: var(--card);
   color: var(--texto); border-radius: 8px; padding: .25rem .5rem; font-size: .95rem;
@@ -959,9 +904,9 @@ dialog.modal-caixa:not([open]) { display: none; }   /* UA perdia p/ classe — d
 .qdrant-card .qtd { font-variant-numeric: tabular-nums; color: var(--acento);
   font-weight: 700; }
 
-/* ═══ CHAT EM CARTÃO (igual ao multimídia — pedido do dono 28/08):
+/* ═══ CHAT EM CARTÃO (pedido do dono 28/08):
    a coluna conversa+composer vive num cartão destacado; o palco rola
-   dentro; mesmo padding/raio do .midia-coluna. ═══ */
+   dentro. ═══ */
 body.pagina-chat .chat-col {
   background: var(--card); border: 1px solid var(--borda);
   border-radius: 12px; min-height: 0; overflow: hidden;
@@ -1012,10 +957,9 @@ dialog.modal-caixa { margin: auto; max-height: calc(100dvh - 2.5rem); }
 dialog.modal-caixa .modal-corpo { overflow-y: auto;
   max-height: calc(100dvh - 9rem); }
 
-/* ═══ ALTURA PADRÃO ÚNICA: multimídia segue o MESMO contrato do chat
-   (.app-shell main = 100dvh - topo) — fim do chute "10.5rem" que
-   desalinhava o painel com o topo. ═══ */
-/* (regras de shell do midia removidas — contrato unico @layer layout) */
+/* ═══ ALTURA PADRÃO ÚNICA (.app-shell main = 100dvh - topo) — fim do
+   chute "10.5rem" que desalinhava o painel com o topo. ═══ */
+/* (regras de shell removidas — contrato unico @layer layout) */
 
 /* ═══ ESTADO VAZIO do chat (revisão glm-4.6v): centro do palco, exemplos
    clicáveis — sem linha solta desalinhada no topo. ═══ */
@@ -1055,19 +999,19 @@ body.pagina-chat #conversa { flex: 1 1 auto; }
   white-space: normal; line-height: 1.55; font-size: .92rem; }
 .leitura-corpo pre { white-space: pre-wrap; }
 
-/* ═══ ALINHAMENTO GLOBAL (pedido do dono 28/08 — referência = os OUTROS
-   módulos): chat/multimídia ganham h1+descrição e o MESMO padding do
-   main; o wrapper .pagina-conteudo estica (flex:1) para a coluna ocupar
-   o resto da altura — cartão nasce na MESMA linha dos demais. ═══ */
-body.pagina-chat main, body.pagina-midia main {
+/* ═══ ALINHAMENTO GLOBAL (pedido do dono 28/08): o chat ganha
+   h1+descrição e o MESMO padding do main; o wrapper .pagina-conteudo
+   estica (flex:1) para a coluna ocupar o resto da altura — cartão nasce
+   na MESMA linha dos demais. ═══ */
+body.pagina-chat main {
   padding: .55rem .8rem .7rem;   /* FULL WIDTH (pedido do dono — de volta) */
 }
-body.pagina-chat .pagina-conteudo, body.pagina-midia .pagina-conteudo {
+body.pagina-chat .pagina-conteudo {
   flex: 1; display: flex; flex-direction: column; min-height: 0;
   max-width: none; width: 100%;   /* FULL WIDTH (herdava o teto dos módulos) */
 }
-body.pagina-chat h1, body.pagina-midia h1 { margin: 3px 0 .1rem; }
-body.pagina-chat .descricao, body.pagina-midia .descricao { margin: 0 0 .8rem; }
+body.pagina-chat h1 { margin: 3px 0 .1rem; }
+body.pagina-chat .descricao { margin: 0 0 .8rem; }
 
 /* ═══ 💬 WIDGET DE CHAT FLUTUANTE (pedido do dono 28/08: "o chat seja
    flutuante e sempre exibido"): botão no canto em TODAS as páginas
@@ -1077,18 +1021,11 @@ body.pagina-chat .descricao, body.pagina-midia .descricao { margin: 0 0 .8rem; }
 
 /* ═══ COMPOSER FLUTUANTE (pedido do dono 28/08: "flutuante = SOMENTE o
    campo onde digitamos — sempre visível"): sticky na base — a conversa
-   rola por cima, o campo NUNCA sai da tela. MESMO formato chat×multimídia. */
-body.pagina-chat #composer, body.pagina-midia #m-composer {
+   rola por cima, o campo NUNCA sai da tela. */
+body.pagina-chat #composer {
   position: sticky; bottom: 0; z-index: 20;
   background: var(--card);
 }
-/* MESMA ANCORA (2.4): o composer do midia vive num .cartao com padding
-   interno — o offset media 18px a mais que o chat. A coluna central do
-   midia perde o padding lateral (o composer e as bolhas assentam na
-   MESMA regua do chat). */
-body.pagina-midia .midia-coluna { padding: 0; border: none; background: transparent; }
-body.pagina-midia .midia-coluna > #m-conversa { padding: 0 .75rem; }
-body.pagina-midia #m-composer { margin: 0 .75rem; }
 
 /* ═══ UTILITÁRIOS de normalização (2.5) — inline styles recorrentes
    viram classes: uma largura, um lugar. Cobrem os padrões repetidos de
