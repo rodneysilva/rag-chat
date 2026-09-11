@@ -111,8 +111,10 @@ def test_semelhante_funde_no_mesmo_id(embeddings):
     assert payload["metadata"]["atualizado_em"]              # alteração datada
     assert payload["metadata"]["consolidacoes"] == 1
     assert "nova_fonte.md" in payload["metadata"]["origens_extras"]
-    # saída padrão (regra 6): resumo no formato fixo
-    assert any("📥 saída:" in l for l in logs)
+    # saída padrão (regra 6): resumo no formato fixo, TODOS os campos
+    # preenchidos (o "{total}" não substituído foi bug real visto ao vivo)
+    linhas_saida = [l for l in logs if "📥 saída:" in l]
+    assert linhas_saida and "{" not in linhas_saida[0]
 
 
 def test_identico_e_inalterado_nada_grava(embeddings):

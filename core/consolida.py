@@ -167,7 +167,7 @@ def consolidar(client, colecao: str, chunks, log=print) -> dict:
     log(_palavra("MSG_SAIDA",
                  "📥 saída: {novos} novo(s) · {consolidados} consolidado(s) · "
                  "{inalterados} inalterado(s) — {colecao} ficou com {total} "
-                 "ponto(s)", **resumo, colecao=colecao))
+                 "ponto(s)", **resumo, total=total, colecao=colecao))
     return resumo
 
 
