@@ -10,8 +10,8 @@ import os
 
 # nome → (env da URL, default, env do token)
 SERVICOS = {
-    "llm":     ("LLM_BASE_URL", "http://127.0.0.1:8090/v1", None),
-    "embed":   ("EMBED_BASE_URL", "http://127.0.0.1:8081/v1", None),
+    "llm":     ("LLM_BASE_URL", "http://127.0.0.1:8090/v1", "LLM_API_KEY"),
+    "embed":   ("EMBED_BASE_URL", "http://127.0.0.1:8081/v1", "LLM_API_KEY"),
     "agente":  ("AGENTE_HOST_URL", "http://host.docker.internal:8010", "AGENTE_TOKEN"),
     "sandbox": ("SANDBOX_URL", "http://sandbox:8020", "SANDBOX_TOKEN"),
 }

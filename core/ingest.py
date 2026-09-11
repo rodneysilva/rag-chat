@@ -35,10 +35,19 @@ def _slug_pasta(nome: str) -> str:
     return _re.sub(r"[^a-z0-9]+", "_", t.lower()).strip("_") or "documentos"
 
 
+def _auth_llm() -> dict:
+    """Bearer dos llama-server com --api-key (chat e embedding usam a MESMA
+    chave; o Qdrant ignora o header — anexar sempre é seguro). Sem isto o
+    health-check de ingestão/preview lia 401 como 'embedding quebrado' com o
+    servidor saudável no ar (bug real com --api-key nos túneis públicos)."""
+    chave = str(getattr(config, "LLM_API_KEY", "") or "").strip()
+    return {"Authorization": f"Bearer {chave}"} if chave else {}
+
+
 def _require(url: str, name: str):
     """Falha no início com mensagem clara se um serviço estiver fora do ar."""
     try:
-        r = httpx.get(url, timeout=2)
+        r = httpx.get(url, timeout=2, headers=_auth_llm())
         if r.status_code >= 400:
             raise RuntimeError(f"{name} respondeu HTTP {r.status_code} em {url}")
     except RuntimeError:

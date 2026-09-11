@@ -551,7 +551,8 @@ class SettingsIn(BaseModel):
 # sequestrar a auth/infra: AUTH_SECRET forja token de admin, LLM_* redireciona
 # o chat etc.) — além destas, só maiúsculas/underline simples
 _ENV_PROIBIDAS = {"AUTH_SECRET", "AUTH_ADMIN_USER", "AUTH_ADMIN_PASS",
-                  "LLM_BASE_URL", "LLM_MODEL", "EMBED_BASE_URL", "EMBED_MODEL",
+                  "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY",
+                  "EMBED_BASE_URL", "EMBED_MODEL",
                   "QDRANT_URL", "RAGAROY_CONTAINER", "MODELS_DIR",
                   "LLAMA_BIN", "SERPER_API_KEY"}
 
@@ -964,6 +965,7 @@ def _campos_config() -> dict:
 # quando mexer e exemplo. A chave nunca viu um dica aplicável antes.
 _DICAS_CAMPO = {
     "LLM_BASE_URL": "Endereço do servidor de CONVERSA (llama-server). Só mexa se trocar porta/máquina — ex.: http://host.docker.internal:8090 no container ou https://llm.disroy.org pelo túnel.",
+    "LLM_API_KEY": "Chave Bearer exigida pelos servidores llama-server (chat + embedding) iniciados com --api-key — protege os túneis públicos llm/embed.disroy.org. Mesma chave do ~/infra/.env da estação; /health continua público. Vazio = servidores sem --api-key.",
     "LLM_MODEL": "GGUF servido AGORA. Na prática troque pelo seletor do CHAT (troca a quente e grava aqui); editar à mão é só para consertar.",
     "EMBED_BASE_URL": "Endereço do embedding (bge-m3) — quem indexa e busca no Qdrant chama isto. Padrão: http://…:8081 (ligado sempre).",
     "EMBED_MODEL": "Nome do modelo de embedding. ⚠️ Trocar por um de dimensão diferente exige REINGESTAR todas as coleções.",

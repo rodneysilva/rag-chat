@@ -61,7 +61,8 @@ def models():
     no_ar = {}
     for chave, url in [("chat", config.LLM_BASE_URL), ("embed", config.EMBED_BASE_URL)]:
         try:
-            r = httpx.get(f"{url}/models", timeout=1.5)
+            r = httpx.get(f"{url}/models", timeout=1.5,
+                          headers=modelos._auth_headers())
             no_ar[chave] = [m.get("model") or m.get("name")
                             for m in r.json().get("models", [])]
         except Exception:

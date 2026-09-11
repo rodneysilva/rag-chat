@@ -74,10 +74,16 @@ def saude(porta: int) -> bool:
 
 
 def servido(porta: int) -> str | None:
-    """Alias do modelo que a porta serve (OpenAI /v1/models)."""
+    """Alias do modelo que a porta serve (OpenAI /v1/models).
+
+    Com --api-key no servidor, /v1/models exige o Bearer do .env — sem o
+    header o 401 virava None e o status mentia 'FORA' com o servidor no ar."""
+    ped = urllib.request.Request(f"http://127.0.0.1:{porta}/v1/models")
+    chave = (env_ler().get("LLM_API_KEY") or "").strip()
+    if chave:
+        ped.add_header("Authorization", f"Bearer {chave}")
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{porta}/v1/models",
-                                    timeout=3) as r:
+        with urllib.request.urlopen(ped, timeout=3) as r:
             dados = json.loads(r.read())
             ids = [m.get("id") for m in dados.get("data", [])]
             return ids[0] if ids else None

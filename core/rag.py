@@ -1,5 +1,4 @@
-﻿import os
-import threading
+﻿import threading
 """
 Componentes LangChain do RAG: embedding, Qdrant, LLM e geração da resposta.
 
@@ -22,7 +21,10 @@ from .specs import spec
 
 # llama.cpp não valida chave por padrão, mas com --api-key no llama-server
 # ela É obrigatória (401 sem). Local não usa; VPS via túnel usa LLM_API_KEY.
-API_KEY = os.getenv("LLM_API_KEY", "sk-no-key")
+# Lida de config a CADA construção de cliente: a constante de import congelava
+# o valor do boot (trocar a chave no Sistema só valia após restart).
+def _api_key() -> str:
+    return str(getattr(config, "LLM_API_KEY", "") or "").strip() or "sk-no-key"
 
 # Lembrete curto repetido no FIM do prompt (depois do histórico): o modelo dá
 # mais peso ao que está perto da geração — sem isso, um histórico com respostas
@@ -77,7 +79,7 @@ def embeddings():
             return saida
 
     return _EmbeddingsContados(
-        api_key=API_KEY,
+        api_key=_api_key(),
         base_url=config.EMBED_BASE_URL,
         model=config.EMBED_MODEL,
         check_embedding_ctx_length=False,  # envia texto puro, sem tiktoken
@@ -227,7 +229,7 @@ def llm(temperature=None):
         temperatura = temperature
     ov = _override()
     return LLMContada(
-        api_key=(ov or {}).get("api_key") or API_KEY,
+        api_key=(ov or {}).get("api_key") or _api_key(),
         base_url=(ov or {}).get("base_url") or config.LLM_BASE_URL,
         model=(ov or {}).get("model") or config.LLM_MODEL,
         temperature=temperatura,

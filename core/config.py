@@ -50,6 +50,8 @@ EMBEDDINGS = {
 FIELDS = {
     "LLM_BASE_URL":   ("Serviços", "URL da LLM (llama-server)", "str"),
     "LLM_MODEL":      ("Serviços", "Modelo de conversa ativo", "str"),
+    "LLM_API_KEY":    ("Serviços", "Chave Bearer dos servidores (exigida pelo"
+                      " llama-server com --api-key)", "secret"),
     "EMBED_BASE_URL": ("Serviços", "URL do embedding", "str"),
     "EMBED_MODEL":    ("Serviços", "Embedding ativo", "str"),
     "QDRANT_URL":     ("Serviços", "URL do Qdrant", "str"),
@@ -175,7 +177,7 @@ def set_env_inplace(chave: str, valor: str) -> None:
 
 def reload():
     """Relê o .env e atualiza os valores deste módulo."""
-    global LLM_BASE_URL, LLM_MODEL, EMBED_BASE_URL, EMBED_MODEL, QDRANT_URL
+    global LLM_BASE_URL, LLM_MODEL, LLM_API_KEY, EMBED_BASE_URL, EMBED_MODEL, QDRANT_URL
     global COLLECTION, SERPER_API_KEY, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
     global SCORE_MIN, TEMPERATURE, PROMPT_SYSTEM, SCORE_CHUNK_MIN
     global SCORE_DIRETO, SCORE_FRACO
@@ -189,6 +191,10 @@ def reload():
     SERPER_API_KEY = serper_ambiente or os.getenv("SERPER_API_KEY", "")
     LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:8080/v1")
     LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5-coder-7b")
+    # Bearer exigido pelos llama-server com --api-key (chat e embedding
+    # compartilham a chave — túneis públicos llm/embed.disroy.org; vazio =
+    # servidor sem --api-key, header não é enviado)
+    LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
     EMBED_BASE_URL = os.getenv("EMBED_BASE_URL", "http://localhost:8081/v1")
     EMBED_MODEL = os.getenv("EMBED_MODEL", "bge-m3")
     QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
@@ -222,6 +228,7 @@ def as_dict():
     return {
         "LLM_BASE_URL": LLM_BASE_URL,
         "LLM_MODEL": LLM_MODEL,
+        "LLM_API_KEY": LLM_API_KEY,
         "EMBED_BASE_URL": EMBED_BASE_URL,
         "EMBED_MODEL": EMBED_MODEL,
         "QDRANT_URL": QDRANT_URL,

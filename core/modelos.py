@@ -218,9 +218,7 @@ def embedding_no_ar() -> bool:
     import time as _t
     if _t.time() < _embed_ok_ate:
         return True
-    cabecalhos = {}
-    if getattr(config, "LLM_API_KEY", ""):
-        cabecalhos["Authorization"] = f"Bearer {config.LLM_API_KEY}"
+    cabecalhos = _auth_headers()
     base = str(getattr(config, "EMBED_BASE_URL", "") or "").rstrip("/")
     try:
         if base.startswith("http"):
