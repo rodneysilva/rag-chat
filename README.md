@@ -200,6 +200,18 @@ navegador.
   Trocar o motor = apontar `LLM_BASE_URL`/`EMBED_BASE_URL` para
   qualquer endpoint OpenAI-compatible (llama.cpp, vLLM, provedor cloud)
   — zero mudança de código.
+- **🎯 Consulta consolidada** (spec `core/specs/consulta_consolidada.md`):
+  modo/escopo/MCPs nascem da configuração da administração (`.env`,
+  cartão 🎯 Consulta do `/sistema`) — `mode`/`model`/`collections`/`mcps`
+  no payload de `/api/query` são **aceitos e ignorados**. As fontes
+  seguem na resposta (`docs`), sem o nome da coleção.
+- **API compatível OpenAI** (`POST /v1/chat/completions`, `GET
+  /v1/models`): clientes SDK consomem o mesmo motor do chat — última
+  mensagem `user` vira a pergunta, as anteriores o histórico; resposta
+  no shape OpenAI (`choices[].message`, `usage`) com `citations` como
+  campo extra; `stream:true` devolve SSE (`chat.completion.chunk` +
+  `[DONE]`); `model`/`temperature` aceitos e ignorados; autenticação =
+  mesmo Bearer do login (erros no shape `{"error":{message,type,code}}`).
 
 Superfície por domínio: `auth` (login/conta) · `chat` (consulta com
 jobs, sessões) · `biblioteca` (ingestão, coleções, pesquisa, revisão,
@@ -216,7 +228,16 @@ curl -c jar -X POST http://localhost:8001/api/auth/login \
 curl -b jar -X POST http://localhost:8001/api/query \
   -H 'Content-Type: application/json' \
   -d '{"question": "o que diz a base sobre X?", "mode": "rag", "job": true}'
+#                        ^^^ mode/collections/mcps do payload são IGNORADOS —
+#                            a config da administração (🎯 Consulta) resolve
 curl -b jar http://localhost:8001/api/query/status/<job>   # logs + resposta
+
+# API compatível OpenAI: mesmo Bearer do login, shape OpenAI
+curl -N http://localhost:8001/v1/chat/completions \
+  -H "Authorization: Bearer <token-do-login>" \
+  -H 'Content-Type: application/json' \
+  -d '{"messages": [{"role": "user", "content": "o que é o vatapá?"}],
+       "stream": true}'
 ```
 
 ## Arquitetura
