@@ -292,14 +292,16 @@ def test_digest_rag_sanitiza_recorta_e_numera():
     )
     docs = [
         Document(page_content="[vatapá passo a passo]\n" + gigante,
-                 metadata={"colecao": "culinaria", "titulo": "Vatapá"}),
+                 metadata={"colecao": "culinaria", "area": "cozinha regional",
+                           "titulo": "Vatapá"}),
         Document(page_content="", metadata={}),  # vazio não ocupa número
     ]
     out = rag.digest_rag("o que é o vatapá?", docs)
     assert "<sup>" not in out                     # detrito de citação fora
     assert "[vatapá passo a passo]" not in out    # header de chunk fora
     assert "**1 · Vatapá**" in out                # título no cabeçalho
-    assert "culinaria" in out                     # coleção no cabeçalho
+    assert "cozinha regional" in out              # ÁREA no cabeçalho…
+    assert "culinaria" not in out                 # …coleção NÃO (regra 6)
     assert "prato paraense" in out                # recortou o parágrafo CERTO
     assert "Sobremesas regionais" not in out      # …não o trecho inteiro
     assert "**2" not in out                       # vazio não ganhou número

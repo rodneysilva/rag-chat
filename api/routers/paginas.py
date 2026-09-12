@@ -21,68 +21,12 @@ def pagina_chat(request: Request, _sid: str | None = None):
     ctx["mensagens"] = _msgs_da_sessao(sid_uso, ctx["usuario"])
     # job EM CURSO da sessão: o polling volta renderizado (refresh não perde)
     ctx.update(_job_ativo_ctx(sid_uso))
-    try:
-        ctx["colecoes"] = collections() or []
-    except Exception:
-        ctx["colecoes"] = []
-    # modelos de CONVERSA p/ o seletor (o ativo marcado), CATEGORIZADOS:
-    # programação (coder) x conversa geral — optgroups no combobox
-    try:
-        _ativo = modelos.servido(modelos.CHAT_PORTA)
-        _stem_alias = {}
-        for alias, (arq, _c) in modelos.REGISTRO.items():
-            _stem_alias.setdefault(modelos.Path(arq).stem, alias)
-        _grupos = {"programacao": [], "conversa": []}
-        for m in modelos.listar():
-            if m.get("categoria") != "chat":
-                continue
-            nome = _stem_alias.get(m["nome"], m["nome"])
-            _grupos["programacao" if "coder" in nome.lower() else "conversa"].append(
-                {"nome": nome, "gb": m.get("gb"),
-                 "ativo": nome == _ativo})
-        ctx["modelos_chat"] = (_grupos["programacao"] + _grupos["conversa"])
-        ctx["modelos_chat_grupos"] = [
-            {"rotulo": "programação", "modelos": _grupos["programacao"]},
-            {"rotulo": "conversa", "modelos": _grupos["conversa"]}]
-    except Exception:
-        ctx["modelos_chat"] = []
-        ctx["modelos_chat_grupos"] = []
-    # 🌐 PROVEDORES EXTERNOS (glm/deepseek/openai/anthropic…) no mesmo
-    # seletor: um optgroup por provedor.
-    # O valor é "prov:modelo" (parseado no _processar_query). Sem custo
-    # quando LLM_PROVIDERS está vazio (nada configurado no .env).
-    try:
-        from core import provedores as _prov
-        for _p in _prov.listar():
-            if not _p["externo"] or not _p["modelos"]:
-                continue
-            # 🏷️ por CATEGORIA (pedido do dono): conversa/programação/
-            # raciocínio/visão — cada uma com seu optgroup; modelo de
-            # GERAÇÃO de imagem/áudio/embedding NÃO serve o chat (fica no
-            # Sistema com o uso explicado)
-            _ordem = {"visao": 0, "programacao": 1, "raciocinio": 2,
-                      "conversa": 3}
-            _por_cat = {}
-            for m in _p["modelos"]:
-                if m.get("cat") in ("imagem", "audio", "embed"):
-                    continue
-                _por_cat.setdefault(m.get("cat", "conversa"), []).append(m)
-            for _cat in sorted(_por_cat, key=lambda c: _ordem.get(c, 9)):
-                ctx["modelos_chat_grupos"].append({
-                    "rotulo": f"🌐 {_p['nome']} · "
-                              f"{_prov.CAT_ROTULOS.get(_cat, _cat)}",
-                    "externo": _p["id"],
-                    "modelos": [{"nome": f"{_p['id']}:{m['nome']}",
-                                 "rotulo": m["nome"], "gb": None,
-                                 "ativo": False,
-                                 "ctx": m.get("ctx"), "info": m.get("info", "")}
-                                for m in _por_cat[_cat]]})
-    except Exception:
-        pass
-    try:
-        ctx["mcps"] = [s.get("nome") or s for s in mcp_registry.list_servers()]
-    except Exception:
-        ctx["mcps"] = []
+    # 🎯 CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md):
+    # o composer NÃO recebe mais coleções/modelos/MCPs — modo/escopo/
+    # ferramentas vêm da config da administração. Só o health escapa:
+    # llm_ativo decide se o botão ✨prompt existe (sem LLM não há o que
+    # reescrever); o badge 🧠 do topo segue lendo /api/modelo/ativo
+    ctx["llm_ativo"] = consulta.llm_ativo()
     resposta = TEMPLATES.TemplateResponse(request, "chat.html", ctx)
     if not _sid:
         resposta.delete_cookie(SESSAO_COOKIE)  # nova conversa DE VERDADE

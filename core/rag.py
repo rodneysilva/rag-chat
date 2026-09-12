@@ -716,10 +716,14 @@ def digest_rag(question, docs, limite: int = 4) -> str:
     from .tradutor import palavra as _palavra_trad
     partes = []
     for it in itens:
+        # 🎯 CONSULTA CONSOLIDADA (regra 6 da spec consulta_consolidada.md):
+        # o NOME da coleção NÃO aparece na resposta — escopo é assunto da
+        # administração. A origem visível é a ÁREA (domínio do texto) ou o
+        # marcador 🌐 web para páginas baixadas
         if it["colecao"] == "🌐 web":
             origem = it["colecao"]      # "🌐 web · web" seria redundância
         else:
-            origem = " · ".join(x for x in (it["colecao"], it["area"]) if x)
+            origem = str(it["area"] or "").strip()
         cab = (f"**{it['n']} · {it['titulo']}**" if it["titulo"]
                else f"**{it['n']}**")
         if origem:

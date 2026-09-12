@@ -11,7 +11,8 @@ conversa; o container do chat nem acorda na estação.
 ## Regras
 
 1. HEADER PADRÃO de cada fragmento: número, título, o que é (quando a
-   metadata traz e difere do título), origem (coleção · área, ou 🌐 web) —
+   metadata traz e difere do título), origem (ÁREA do domínio, ou 🌐 web —
+   nome de coleção NÃO aparece: regra 6 da spec consulta_consolidada.md) —
    e o marcador *(traduzido)* quando o tradutor agiu.
 2. Do fragmento entra só o TRECHO mais parecido com a pergunta (parágrafo
    ± vizinhos, até ~900 caracteres), nunca a seção inteira; detritos de

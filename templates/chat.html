@@ -58,62 +58,19 @@
           <button class="primario enviar-btn" type="submit" title="enviar">&#10148;</button>
         </div>
         {# ══ CONTROLES ══ #}
+        {# 🎯 CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md):
+           SEM seletores de modo/modelo/coleções/MCPs — tudo nasce da config
+           da administração (Sistema → 🎯 Consulta). O badge 🧠 do topo segue
+           mostrando o modelo NO AR (health, leitura — não escolha) #}
         <div class="controles-linha">
-          {# 1º: MODO — como usar a base (pedido do dono 11/09: escolher o
-             tipo ANTES; em "rag (só a base)" a LLM de conversa nem é
-             consultada, então o modelo fica OCULTO — nada sobrando) #}
-          <select name="mode" id="sel-modo" title="modo de resposta (como a base entra)" onchange="modoMudou(this)">
-            <option value="hibrido">híbrido</option>
-            <option value="rag">rag (só a base)</option>
-            <option value="livre">livre</option>
-            <option value="auto">auto</option>
-          </select>
-          {# 2º: MODELO — conversa (local + 🌐 provedores por categoria) #}
-          <select name="model" id="sel-modelo" title="modelo de conversa" onchange="modeloMudou(this)">
-            {% for g in modelos_chat_grupos %}
-            {% if g.modelos %}
-            <optgroup label="{{ g.rotulo }}" class="grp-chat" {% if g.externo %}data-prov="{{ g.externo }}"{% endif %}>
-              {% for m in g.modelos %}
-              <option value="{{ m.nome }}" {{ 'selected' if m.ativo }}{% if m.ctx or m.info %} title="{{ (m.info or '') ~ (' · ctx ' ~ (m.ctx // 1000) ~ 'k' if m.ctx else '') }}"{% endif %}>{{ m.rotulo or m.nome }}{% if m.gb %} · {{ m.gb }}GB{% elif m.ctx %} · {{ m.ctx // 1000 }}k{% endif %}</option>
-              {% endfor %}
-            </optgroup>
-            {% endif %}
-            {% endfor %}
-          </select>
+          {% if llm_ativo %}
           <button type="button" onclick="melhorarPrompt(this)" id="btn-prompt"
                   title="a ✨ reescreve o que você digitou na melhor forma — pergunta, pedido de código, instrução">✨ prompt</button>
+          {% endif %}
           <button type="button" onclick="alternarPainel()" id="btn-painel"
                   title="mostrar/ocultar o painel da conversa (arquivos · fontes)">{{ icone("painel") }} painel</button>
           <button type="button" hx-post="/hx/conversa/nova" hx-target="#palco" hx-swap="innerHTML" title="nova conversa">&#10133; nova</button>
         </div>
-        {# ══ COLEÇÕES: grid de checkboxes (rola dentro) — marcar alguma no
-           modo LIVRE troca para HÍBRIDO automaticamente: coleção marcada
-           É contexto RAG (o servidor também promove; o select reflete) ══ #}
-        <details class="colecoes-box" id="colecoes-box" open>
-          <summary>coleções do contexto ({{ colecoes | length }})</summary>
-          <input type="search" id="colecao-busca" placeholder="pesquisar coleção…" autocomplete="off"
-                 oninput="filtrarColecoes(this.value)">
-          <div class="colecoes-grid" id="colecoes-grid">
-            {% for c in colecoes %}
-            <label class="colecao-check"><input type="checkbox" name="colecoes" value="{{ c.nome }}"> {{ c.nome }} <span class="mini">({{ c.points }})</span></label>
-            {% endfor %}
-          </div>
-        </details>
-        {# 🔌 FERRAMENTAS MCP (pedido: selecionar como as coleções, sem
-           muita informação de cara): recolhido por padrão, pesquisa filtra
-           e as caixas marcadas viajam no form (name=mcps — o agente usa as
-           ferramentas dos servidores marcados ao responder) #}
-        <details class="colecoes-box" id="mcp-box">
-          <summary>🔌 ferramentas MCP <span class="mini" id="mcp-contagem"></span></summary>
-          <input type="search" id="mcp-busca" placeholder="pesquisar MCP…" autocomplete="off"
-                 oninput="filtrarMcps(this.value)">
-          <div class="colecoes-grid" id="mcp-grid">
-            <p class="mini" id="mcp-vazio">carregando servidores…</p>
-          </div>
-          <p class="mini" style="margin:.3rem 0 0;">marcadas = o assistente usa ao responder
-            (🌐 pesquisa-web baixa páginas completas para contextualizar com informação atual).
-            Instale mais na Biblioteca 🔌.</p>
-        </details>
       </form>
       <p class="mini" style="margin:.4rem 0 0;">
         ⏎ envia · ⇧⏎ nova linha · ↑ recupera a última pergunta.
@@ -325,73 +282,15 @@ FORM.addEventListener("submit", (e) => {
   pensando.appendChild(ph);
 });
 
-/* ═══════════ 1e. PESQUISA de coleções e MCPs no chat ═══════════ */
-function filtrarColecoes(termo) {
-  const t = (termo || "").toLowerCase();
-  document.querySelectorAll("#colecoes-grid .colecao-check").forEach(el =>
-    (el.hidden = t ? !el.textContent.toLowerCase().includes(t) : false));
-}
-let _mcpsMarcados = new Set(
-  JSON.parse(localStorage.getItem("ragchat.mcps") || "[]"));
-function _salvarMcps() {   // a seleção ACOMPANHA o usuário (próximas visitas)
-  localStorage.setItem("ragchat.mcps", JSON.stringify([..._mcpsMarcados]));
-}
-function filtrarMcps(termo) {
-  const t = (termo || "").toLowerCase();
-  document.querySelectorAll("#mcp-grid .colecao-check").forEach(el =>
-    (el.hidden = t ? !el.textContent.toLowerCase().includes(t) : false));
-}
-/* 🔎 PESQUISA-WEB (NATIVA): entra na lista ANTES dos servidores — é o
-   motor de busca do RagChat (páginas inteiras, não snippets), marcável
-   como qualquer MCP para contextualizar a sessão com informação atual. */
-const MCP_NATIVO = {
-  nome: "pesquisa-web",
-  rotulo: 'pesquisa-web <span class="mini">🌐 nativa — páginas completas, informação atual</span>',
-};
-async function carregarMcps() {
-  const grid = document.getElementById("mcp-grid");
-  const cont = document.getElementById("mcp-contagem");
-  try {
-    const r = await fetch("/api/mcp");
-    const lista = await r.json();
-    let html = "";
-    const item = (nome, rotulo) =>
-      '<label class="colecao-check' + (_mcpsMarcados.has(nome) ? " marcado" : "") + '">' +
-      '<input type="checkbox" name="mcps" value="' + nome + '"' +
-      (_mcpsMarcados.has(nome) ? " checked" : "") + '> ' + rotulo + '</label>';
-    html += item(MCP_NATIVO.nome, MCP_NATIVO.rotulo);
-    if (Array.isArray(lista)) {
-      html += lista.map(m => item(m.nome, m.nome +
-        ' <span class="mini">(' + (m.transport || "?") + ')</span>')).join("");
-    }
-    grid.innerHTML = html || '<p class="mini">nenhum servidor MCP registrado</p>';
-    grid.querySelectorAll("input[name=mcps]").forEach(cb =>
-      cb.addEventListener("change", () => {
-        cb.checked ? _mcpsMarcados.add(cb.value) : _mcpsMarcados.delete(cb.value);
-        _salvarMcps();
-        atualizarContagemMcp();
-      }));
-    atualizarContagemMcp();
-  } catch {
-    grid.innerHTML = '<p class="mini">MCP indisponível agora — abra de novo</p>';
-  }
-}
-function atualizarContagemMcp() {
-  const cont = document.getElementById("mcp-contagem");
-  if (cont) cont.textContent = _mcpsMarcados.size
-    ? "· " + _mcpsMarcados.size + " marcada(s)" : "";
-}
-carregarMcps();
-// REFRESH ao ABRIR o box (pedido: "selecionei um MCP conhecido e ele não
-// apareceu no chat") — instalar na Biblioteca e voltar atualiza sem F5
-document.getElementById("mcp-box")?.addEventListener("toggle", (e) => {
-  if (e.target.open) carregarMcps();
-});
+/* ═══════════ 1e. (REMOVIDO) seletores de coleções/MCPs ═══════════
+   🎯 CONSULTA CONSOLIDADA: os grids de coleções e MCPs saíram do composer
+   — escopo e ferramentas vêm da config da administração (Sistema → 🎯
+   Consulta). Nenhuma busca local sobrou aqui. */
 
 /* ═══════════ 1f. MODELO ATIVO — badge lido do SERVIDOR ═══════════
    /api/modelo/ativo consulta o /v1/models (OpenAI) do llama-server: o
-   badge mostra o que está NO AR agora; trocar modelo = clicar no select
-   (a troca dispara na hora e o badge acompanha até subir — natural). */
+   badge mostra o que está NO AR agora (HEALTH, leitura pura — a escolha
+   do modelo é da administração, não do composer). */
 let MODELO_ATIVO = "";
 async function atualizarModeloAtivo() {
   const b = document.getElementById("badge-modelo");
@@ -407,54 +306,7 @@ async function atualizarModeloAtivo() {
     b.textContent = "🧠 …";
   }
 }
-let _modeloDeb = null;
-function agendarModeloAtivo() {
-  clearTimeout(_modeloDeb);
-  _modeloDeb = setTimeout(atualizarModeloAtivo, 400);
-}
-async function modeloMudou(sel) {
-  const opt = sel.selectedOptions[0];
-  if (!opt || !opt.closest("optgroup.grp-chat")) return;  // geração: não troca
-  const alias = sel.value;
-  if (!alias || alias === MODELO_ATIVO) return;
-  const b = document.getElementById("badge-modelo");
-  b.textContent = "🔁 " + alias + " carregando…";
-  b.title = "trocando o modelo no servidor (GPU) — o próximo aviso é quando estiver no ar";
-  try {
-    const r = await fetch("/api/modelo/ativo", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({modelo: alias})});
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      b.textContent = "⚠️ " + (err.detail || "troca falhou");
-      setTimeout(atualizarModeloAtivo, 2500);
-      return;
-    }
-  } catch { atualizarModeloAtivo(); return; }
-  for (let i = 0; i < 120; i++) {          // acompanha até subir (máx 6 min)
-    await new Promise(ok => setTimeout(ok, 3000));
-    try {
-      const d = await (await fetch("/api/modelo/ativo")).json();
-      if ((d.modelo || "").toLowerCase() === alias.toLowerCase()) break;
-      b.textContent = "🔁 " + alias + " (" + ((i + 1) * 3) + "s)…";
-    } catch {}
-  }
-  atualizarModeloAtivo();
-}
 atualizarModeloAtivo();
-
-/* MODO governa o MODELO: "rag (só a base)" responde só com o que vier do
-   Qdrant (embedding) — a LLM de conversa não é consultada nem ligada, então
-   o select de modelo SOME (pedido do dono 11/09: "se eu selecionar só a
-   rag, nem precisa mostrar os modelos, pois eles não serão utilizados"). */
-function modoMudou(sel) {
-  const m = document.getElementById("sel-modelo");
-  if (!m) return;
-  const semLlm = sel.value === "rag";
-  m.style.display = semLlm ? "none" : "";
-  m.disabled = semLlm;   // disabled não viaja no form — coerente com o fim
-}
-modoMudou(document.getElementById("sel-modo"));
 
 /* ═══════════ 1d. RACIOCÍNIO: o estado abrir/recolher vive no base.html
    (mecanismo único por CHAVE estável — id do card + summary) — abrir
@@ -470,23 +322,6 @@ function _copiar(btn, texto) {
     setTimeout(() => btn.textContent = antigo, 1400);
   });
 }
-
-// COLEÇÃO MARCADA = contexto RAG: no modo livre ela seria ignorada —
-// marcar a 1ª coleção troca o select para híbrido (o servidor também
-// promove; aqui o select apenas REFLETE a realidade para o usuário).
-(function () {
-  const grid = document.getElementById("colecoes-grid");
-  const selMode = document.querySelector('select[name="mode"]');
-  if (!grid || !selMode) return;
-  grid.addEventListener("change", () => {
-    const marcadas = grid.querySelectorAll("input:checked").length;
-    if (marcadas > 0 && selMode.value === "livre") {
-      selMode.value = "hibrido";
-      selMode.title = "coleção marcada entra no contexto (modo híbrido)";
-      modoMudou(selMode);   // saiu do rag/livre → o select de modelo volta
-    }
-  });
-})();
 
 /* ✨ PROMPT universal: a LLM reescreve o RASCUNHO na melhor forma — entende
    só o que está digitado (pergunta, código, instrução). Substitui o
@@ -1048,14 +883,15 @@ function _fontesParaPainel(dados) {
     const score = typeof d.score === "number"
       ? '<span class="doc-col" title="similaridade do embedding (bge-m3)">⚡ '
         + d.score.toFixed(3) + "</span>" : "";
-    const col = d.colecao ? '<span class="doc-col">' + d.colecao + "</span>" : "";
+    // 🎯 consulta consolidada (regra 6): coleção NÃO aparece — fontes/
+    // arquivos/trechos seguem visíveis, nome de coleção é da administração
     const cat = d.categoria ? '<span class="doc-col">' + d.categoria + "</span>" : "";
     const desc = d.descricao ? '<div class="doc-tx">' + d.descricao + "</div>" : "";
     const tx = (d.page_content || d.content || "").slice(0, 700);
     const item = _painelItemNovo("[" + (i + 1) + "] " + arq, "fontes");
     const box = document.createElement("div");
     box.innerHTML = '<div class="doc-hd"><b>[' + (i + 1) + ']</b> '
-      + '<span class="doc-arq">' + arq + "</span> " + score + col + cat
+      + '<span class="doc-arq">' + arq + "</span> " + score + cat
       + '</div>' + desc
       + '<div class="doc-tx">' + tx + "</div>";
     item.appendChild(box);

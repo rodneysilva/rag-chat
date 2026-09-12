@@ -73,8 +73,13 @@ class TestComposer:
         v = pagina.input_value("#pergunta")
         assert "l1" in v and "l2" in v
 
-    def test_colecoes_visiveis(self, pagina):
-        assert pagina.eval_on_selector(".colecoes-box", "el => el.open") is True
+    def test_composer_reduzido(self, pagina):
+        """🎯 Consulta consolidada (spec consulta_consolidada.md): o composer
+        NÃO tem seletores de modo/modelo/coleções/MCPs — a config da
+        administração decide; aqui só existem texto, enviar, painel e nova."""
+        for sel in ("#sel-modo", "#sel-modelo", "#colecoes-box", "#mcp-box"):
+            assert pagina.locator(sel).count() == 0, f"{sel} não deveria existir"
+        assert pagina.locator("#btn-painel").count() == 1
 
 
 class TestRaciocinio:
