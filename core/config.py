@@ -115,6 +115,24 @@ FIELDS = {
                         "Similaridade (0–1) em que um pedaço novo é a MESMA "
                         "informação de um existente → funde. 0.92 é o padrão "
                         "do repo (quase-duplicado do preview/pesquisa)", "float"),
+    # ── CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md):
+    # o chat e a API /v1 NÃO escolhem escopo — estas chaves mandam. Editadas
+    # pelo cartão 🎯 Consulta do /sistema; NUNCA colocar no environment: do
+    # compose (o .env precisa vencer — set_env_inplace cobre o container).
+    "RAG_ATIVO":   ("Consulta",
+                    "Busca na base (1=liga): o Qdrant participa da consulta. "
+                    "Com a LLM também ligada → híbrido; sozinho → digest rag "
+                    "puro (zero LLM)", "int"),
+    "LLM_ATIVO":   ("Consulta",
+                    "LLM de conversa (1=liga): modelo responde/aprofunda. "
+                    "Sozinha → modo livre (sem busca na base)", "int"),
+    "RAG_COLECOES": ("Consulta",
+                     "Coleções da consulta (CSV). Vazio = TODAS as visíveis. "
+                     "Definido no cartão 🎯 Consulta do /sistema", "text"),
+    "MCP_ATIVOS":  ("Consulta",
+                    "Servidores MCP ativos (CSV) — valem para TODA consulta "
+                    "(chat e API /v1). Inclua 'pesquisa-web' para a busca web "
+                    "entrar; vazio = nenhum", "text"),
 }
 
 # chaves cujo valor é SEGREDO: exibidas mascaradas e nunca regravadas
@@ -154,6 +172,12 @@ TRADUTOR = True
 TRADUTOR_MODEL = "Helsinki-NLP/opus-mt-tc-big-en-pt"
 CONSOLIDA = True
 CONSOLIDA_SCORE = 0.92
+# consulta consolidada (spec consulta_consolidada.md) — modo/escopo/MCPs
+# da consulta nascem DAQUI, não do payload do chat/API
+RAG_ATIVO = True
+LLM_ATIVO = True
+RAG_COLECOES = ""
+MCP_ATIVOS = ""
 
 
 def set_env(chave: str, valor: str) -> None:
@@ -211,6 +235,7 @@ def reload():
     global LLAMA_BIN
     global MOCK_LLM, RERANKER, RERANK_MODEL, TRADUTOR, TRADUTOR_MODEL
     global CONSOLIDA, CONSOLIDA_SCORE
+    global RAG_ATIVO, LLM_ATIVO, RAG_COLECOES, MCP_ATIVOS
     serper_ambiente = os.environ.get("SERPER_API_KEY", "")  # env real tem prioridade
     # em container: environment do compose VENCE o .env (endpoints de infra);
     # no host: .env é a fonte da verdade (comportamento original)
@@ -253,6 +278,12 @@ def reload():
         "TRADUTOR_MODEL", "Helsinki-NLP/opus-mt-tc-big-en-pt").strip()
     CONSOLIDA = _bool_env("CONSOLIDA", True)
     CONSOLIDA_SCORE = float(os.getenv("CONSOLIDA_SCORE", "0.92"))
+    # consulta consolidada: CSV cru — parse/filtro fica na resolução
+    # (core/consulta.py), aqui só a string do .env
+    RAG_ATIVO = _bool_env("RAG_ATIVO", True)
+    LLM_ATIVO = _bool_env("LLM_ATIVO", True)
+    RAG_COLECOES = os.getenv("RAG_COLECOES", "").strip()
+    MCP_ATIVOS = os.getenv("MCP_ATIVOS", "").strip()
 
 
 def as_dict():
@@ -282,6 +313,10 @@ def as_dict():
         "TRADUTOR_MODEL": TRADUTOR_MODEL,
         "CONSOLIDA": int(CONSOLIDA),
         "CONSOLIDA_SCORE": CONSOLIDA_SCORE,
+        "RAG_ATIVO": int(RAG_ATIVO),
+        "LLM_ATIVO": int(LLM_ATIVO),
+        "RAG_COLECOES": RAG_COLECOES,
+        "MCP_ATIVOS": MCP_ATIVOS,
     }
 
 
