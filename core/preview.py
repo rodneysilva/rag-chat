@@ -295,6 +295,7 @@ def analisar(docs: list, colecao_alvo: str | None = None,
     # contra a coleção-alvo (ou as principais, sem alvo) — ANTES de virar
     # sugestão; repetido vem DESMARCADO (pedido do dono).
     ja_existe: list[dict | None] = [None] * len(preparados)
+    n_rep = 0  # vinculado antes do try: se a verificação cair, o relatório segue
     try:
         client = QdrantClient(url=config.QDRANT_URL, timeout=30,
                               check_compatibility=False)
