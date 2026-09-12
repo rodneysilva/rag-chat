@@ -596,10 +596,13 @@ COLECOES_SISTEMA = {"meta_colecoes", "midia_gerada", "prompts_midia",
 BASE_UNIFICADA = "arquitetura_unificada"
 
 
-def _check(name: str, url: str) -> dict:
-    """Tenta acessar uma URL de saúde e retorna online/offline (exige HTTP 200)."""
+def _check(name: str, url: str, headers: dict | None = None) -> dict:
+    """Tenta acessar uma URL de saúde e retorna online/offline (exige HTTP 200).
+    `headers`: Bearer da LLM_API_KEY para os /models dos llama-server — no
+    túnel de produção o /v1/* sem chave devolve 401 e o badge mentia
+    "offline" com o serviço de pé."""
     try:
-        r = httpx.get(url, timeout=1.5)
+        r = httpx.get(url, timeout=1.5, headers=headers or None)
         return {"name": name, "ok": r.status_code == 200, "detail": f"HTTP {r.status_code}"}
     except Exception as e:
         return {"name": name, "ok": False, "detail": str(e)[:120]}

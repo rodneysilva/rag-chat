@@ -175,8 +175,12 @@ def status():
     with ThreadPoolExecutor(max_workers=4) as ex:
         fut = {
             "qdrant": ex.submit(_check, "Qdrant", f"{config.QDRANT_URL}/healthz"),
-            "llm": ex.submit(_check, "LLM", f"{config.LLM_BASE_URL}/models"),
-            "embed": ex.submit(_check, "Embedding", f"{config.EMBED_BASE_URL}/models"),
+            # /models dos llama-server EXIGE Bearer quando há LLM_API_KEY
+            # (túnel de produção): sem o header o badge marcava offline
+            "llm": ex.submit(_check, "LLM", f"{config.LLM_BASE_URL}/models",
+                             modelos._auth_headers()),
+            "embed": ex.submit(_check, "Embedding", f"{config.EMBED_BASE_URL}/models",
+                               modelos._auth_headers()),
             "_scan": ex.submit(_svc_scan),
         }
         services = {k: f.result(timeout=10) for k, f in fut.items() if k != "_scan"}

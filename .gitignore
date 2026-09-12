@@ -56,3 +56,7 @@ AGENTS-historico.md
 
 # artefatos de rodada do agente (provas ficam em scripts/split)
 Temp/
+
+# override por máquina (VPS: túneis + rede do qdrant do stack antigo) —
+# o compose mescla automaticamente; NUNCA versionar (vale só para o host local)
+docker-compose.override.yml
