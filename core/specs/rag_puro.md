@@ -29,6 +29,15 @@ conversa; o container do chat nem acorda na estação.
    resposta.
 5. ORDEM = relevância do reranker: fragmentos da base e páginas baixadas
    da web disputam em igualdade (rerank base+web).
+6. ROTEAMENTO DE DOMÍNIO (regex, sem LLM — pedido do dono 12/09: "eu
+   perguntei de código e me falou de ingredientes"): a pergunta declara o
+   assunto e o escopo acompanha — termos de código (linguagem/framework,
+   "api", "função", "docker"…) restringem a busca às coleções de
+   desenvolvimento; pergunta SEM esses termos tira as coleções dev quando
+   há coleções de outro domínio no escopo. A regra só RESTRIGE: escopo
+   que ficaria vazio segue como está (a honestidade da regra 4 cobre o
+   resto — classificação errada vira aviso de sem-sinal, nunca resposta
+   de outro assunto).
 
 ## Palavras usadas pelo código
 

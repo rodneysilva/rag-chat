@@ -26,7 +26,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
 from core import agent, auth, bussola, catalog, config, consulta, contadores, executor, grafo, hf, limpeza, modelos, mcp_registry, rag, rerank, sessions
 from core import historico, resolucoes, telemetria
-from core.linguagens import LINGUAGENS
+from core.linguagens import LINGUAGENS, pergunta_dev
 from core.auto import responde_auto, _web_aprofundado
 from core.analyze import analyze_all
 from core.enrich import enrich_collection
@@ -89,6 +89,7 @@ __all__ = [
     "resolucoes",
     "telemetria",
     "LINGUAGENS",
+    "pergunta_dev",
     "responde_auto",
     "_web_aprofundado",
     "analyze_all",
@@ -1593,6 +1594,32 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     log("escopo: " + (", ".join(colecoes) if colecoes
                       else "SEM coleções — sem busca na base (seleção vazia)"),
         "mensagem")
+    # 🧭 ROTEAMENTO DE DOMÍNIO (regra 6 da spec rag_puro.md — sem LLM, caso
+    # real do dono 12/09: "Como desenvolvo uma api em dotnet?" devolvia
+    # tucupi junto com arquivos de teste .NET): a pergunta declara o
+    # ASSUNTO e o escopo acompanha — pergunta de código busca SÓ nas
+    # coleções dev; pergunta sem sinal de código TIRA as dev quando há
+    # coleções de outro domínio ("receita de tucupi" não vasculha 78k
+    # chunks de código). A regra só RESTRINGE (nunca expande): escopo que
+    # ficaria vazio segue como está (a honestidade do sem-sinal cobre).
+    if colecoes and len(colecoes) > 1:
+        if pergunta_dev(str(body.question or "")):
+            devs = [c for c in colecoes if catalog._eh_dev(c)]
+            if devs and len(devs) < len(colecoes):
+                fora = [c for c in colecoes if c not in devs]
+                colecoes = devs
+                log("🧭 pergunta de CÓDIGO — escopo restrito às coleções dev "
+                    "(fora: " + ", ".join(fora) + ")", "mensagem")
+            elif not devs:
+                log("🧭 pergunta de código, mas o escopo não tem coleção dev "
+                    "— seguindo com o escopo completo", "mensagem")
+        else:
+            nao_devs = [c for c in colecoes if not catalog._eh_dev(c)]
+            if nao_devs and len(nao_devs) < len(colecoes):
+                fora = [c for c in colecoes if catalog._eh_dev(c)]
+                colecoes = nao_devs
+                log("🧭 pergunta FORA de código — coleções dev fora do escopo "
+                    "(" + ", ".join(fora) + ")", "mensagem")
     # 👋 SAUDAÇÃO/PERGUNTA TRIVIAL (sem conteúdo recuperável): buscar contexto
     # para "oi tudo bem?" é desperdício puro (3k tokens e fragmentos
     # aleatórios anexados). Responde direto, com o porquê no log.

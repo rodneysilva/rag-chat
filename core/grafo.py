@@ -45,7 +45,7 @@ class Estado(TypedDict, total=False):
 # 🖥️ LINGUAGEM DE PROGRAMAÇÃO é sinal de primeira classe (pedido do dono:
 # "a linguagem que falo é de programação, não somente idioma"): o usuário
 # mistura PT/EN com nomes de tech — o rodeiro ÚNICO é core/linguagens.py
-from .linguagens import EH_DEV as _TECHS
+from .linguagens import EH_DEV as _TECHS, FRAMEWORKS
 _RE_CRIAR = re.compile(
     r"\b(quer[oa]|cri[ae]|criar|faç|faz|fazer|mont[ae]|montar|ger[ae]|"
     r"gerar|escrev|desenvolv|implement|constru|cod|code|program|"
@@ -65,13 +65,11 @@ _RE_COISA = re.compile(
     r"lambda|handler|worker|job|pipeline|template|layout|seed|fixture|"
     r"component|directive|store|composable|endpoint|backend|frontend)\w*",
     re.I)
-# nomes de TECH (linguagens do rodeiro único + frameworks/bancos comuns):
-# citar tech + verbo de criação já é sinal FORTE mesmo sem artefato clássico
+# nomes de TECH (linguagens do rodeiro único + frameworks/bancos comuns —
+# lista ÚNICA em core/linguagens.py FRAMEWORKS): citar tech + verbo de
+# criação já é sinal FORTE mesmo sem artefato clássico
 _RE_PROG = re.compile(
-    r"\b(" + "|".join(sorted(_TECHS)) +
-    r"|flask|fastapi|django|spring|laravel|rails|express|gin|fiber|"
-    r"actix|axum|ktor|docker|k8s|postgres|mysql|mongo|redis|"
-    r"asp\s?net|blazor|maui|xamarin|unity|godot)\b", re.I)
+    r"\b(" + "|".join(sorted(_TECHS)) + "|" + FRAMEWORKS + r")\b", re.I)
 _RE_MIDIA = re.compile(
     r"\b(gif|imagem|v[íi]deo|desenh|foto|ilustra|anime|caricatura|quadro|"
     r"anima|picture|drawing|illustration|render|imagen|vidéo|dibuj)\w*",
