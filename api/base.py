@@ -148,14 +148,11 @@ __all__ = [
     "_RE_CHAVE_APP",
     "_job_ativo_ctx",
     "_palco_response",
-    "_campos_config",
-    "_DICAS_CAMPO",
     "_RE_ANSI",
     "_RE_BARRA",
     "_RE_PCT",
     "_linhas_visual",
     "_scroll_todos",
-    "trocos_label",
     "_jobs_ativos",
     "_SCAN_CACHE",
     "_SCAN_CACHE_TTL",
@@ -968,55 +965,11 @@ def _palco_response(request: Request, sid: str | None, usuario: str):
     return resp
 
 
-def _campos_config() -> dict:
-    """FIELDS + campos DINÂMICOS dos provedores externos (mesma lista na
-    tela Sistema e no /hx/settings — sem isto o form enviava campos que o
-    save ignorava)."""
-    campos = dict(config.FIELDS)
-    try:
-        from core import provedores as _prov
-        for _pid in _prov.ids():
-            for _suf, _rot, _tp in (
-                    ("BASE_URL", "URL da API (OpenAI-compatible)", "str"),
-                    ("API_KEY", "Chave da API", "secret"),
-                    ("MODELOS", "Modelos (lista manual, vírgula — reserva)",
-                     "str")):
-                campos.setdefault(
-                    f"PROV_{_pid.upper()}_{_suf}",
-                    (f"Provedor {_pid.upper()}", _rot, _tp))
-    except Exception:
-        pass
-    return campos
-
-
-# ⓘ dicas PRÁTICAS por campo (tooltip do Sistema — pedido do dono 28/08:
-# "me fala na prática todos os campos e descreva como tooltip"): o que faz,
-# quando mexer e exemplo. A chave nunca viu um dica aplicável antes.
-_DICAS_CAMPO = {
-    "LLM_BASE_URL": "Endereço do servidor de CONVERSA (llama-server). Só mexa se trocar porta/máquina — ex.: http://host.docker.internal:8090 no container ou https://llm.disroy.org pelo túnel.",
-    "LLM_API_KEY": "Chave Bearer exigida pelos servidores llama-server (chat + embedding) iniciados com --api-key — protege os túneis públicos llm/embed.disroy.org. Mesma chave do ~/infra/.env da estação; /health continua público. Vazio = servidores sem --api-key.",
-    "LLM_MODEL": "GGUF servido AGORA. Na prática troque pelo seletor do CHAT (troca a quente e grava aqui); editar à mão é só para consertar.",
-    "EMBED_BASE_URL": "Endereço do embedding (bge-m3) — quem indexa e busca no Qdrant chama isto. Padrão: http://…:8081 (ligado sempre).",
-    "EMBED_MODEL": "Nome do modelo de embedding. ⚠️ Trocar por um de dimensão diferente exige REINGESTAR todas as coleções.",
-    "QDRANT_URL": "Onde o Qdrant (banco vetorial) responde. No container: http://qdrant:6333.",
-    "SERPER_API_KEY": "Chave do serper.dev (Google) usada na pesquisa aprofundada (modo Auto/Pesquisa/Seed). Sem chave cai no DuckDuckGo automaticamente.",
-    "LLM_PROVIDERS": "Ids EXTRA de provedores externos, vírgula (glm,deepseek…). Na prática quase não precisa: o cadastro ☁️ do Sistema (PROV_*_BASE_URL) já auto-descobre.",
-    "HF_TOKEN": "Token do HuggingFace: datasets PRIVADOS da sua conta e rate-limit maior. Cole aqui e salve — aplica na hora.",
-    "CHUNK_SIZE": "Tamanho do pedaço ao INGERIR documento (caracteres). 900–1200 funciona bem; menor = trechos mais precisos, mais pedaços.",
-    "CHUNK_OVERLAP": "Sobreposição entre pedaços para não cortar ideia no meio. ~10% do CHUNK_SIZE.",
-    "TOP_K": "Quantos fragmentos buscar por consulta. 4–8; subir aumenta contexto e custo de tokens.",
-    "SCORE_MIN": "Similaridade mínima para o fragmento entrar (0–1). Subir = mais rígido: menos ruído, mas pode achar menos.",
-    "SCORE_DIRETO": "Score em que o MELHOR fragmento responde sozinho, SEM consultar a LLM (economia total de tokens). 0.65 calibrado.",
-    "SCORE_FRACO": "Abaixo disto o fragmento é FRACO e nem entra no prompt (híbrido responde só com o modelo). 0.55.",
-    "TEMPERATURE": "Criatividade (0 = determinístico). 0.1–0.3 para fatos/código/matÉmtica; 0.5+ só para escrita criativa — alto ERRA contas.",
-    "PROMPT_SYSTEM": "Instruções extras fixas em TODAS as respostas (tom, idioma, proibições). Ex.: 'Responda em português, direto, sem repetir a pergunta.'",
-    "RERANKER": "1 = reordena os achados com cross-encoder local (precisão melhor, +~2 s por busca). 0 = desliga.",
-    "RERANK_MODEL": "Modelo do reranker no HuggingFace. base = leve (1,1 GB); v2-m3 = melhor em PT (2,3 GB) — compare no bench antes de trocar.",
-    "TRADUTOR": "1 = trechos EN do digest rag saem em PT (opus-mt via ctranslate2 int8 na CPU — rápido; torch puro era minutos). 0 = desliga (fica no idioma original).",
-    "TRADUTOR_MODEL": "Modelo do tradutor (HuggingFace, Marian EN→PT — convertido p/ int8 no 1º uso). Padrão opus-mt-tc-big-en-pt (~450 MB); só troque por outro Marian EN→PT.",
-    "CONSOLIDA": "1 = antes de incluir um pedaço, busca semelhante na MESMA coleção: ≥ CONSOLIDA_SCORE funde/complementa o ponto existente; novo ganha id determinístico (reingestão sobrepõe, não empilha). 0 = comportamento antigo (append puro).",
-    "CONSOLIDA_SCORE": "Similaridade (0–1) em que o pedaço novo conta como a MESMA informação de um ponto existente → consolida. Padrão 0.92 (quase-duplicado).",
-}
+# ⚙️ _campos_config/_DICAS_CAMPO (form de .env da tela Sistema) REMOVIDOS
+# (pedido do dono 12/09: "não quero configurações do env aqui, essas coisas
+# ficam no env") — a tela só traz controles de runtime (🎯 Consulta, 🧠
+# Motor, ☁️ Provedores); chaves de infra são editadas no arquivo e o
+# PUT /api/settings segue de pé para automação.
 
 
 _RE_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -1076,10 +1029,6 @@ def _scroll_todos(client, colecao: str, limite: int, filtro=None):
         limite -= len(lote)
         if offset is None or not lote:
             break
-
-
-def trocos_label(n: int) -> str:
-    return f"{n} campo(s) foram"
 
 
 def _jobs_ativos() -> dict[str, int]:

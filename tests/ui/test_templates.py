@@ -83,14 +83,14 @@ class TestChatRender:
 
 class TestSistemaRender:
     """Cartão 🎯 Consulta (spec consulta_consolidada.md) — a fonte única de
-    modo/escopo/MCPs editável pela administração."""
+    modo/escopo/MCPs editável pela administração. O form de .env SAIU da
+    tela (pedido do dono: configurações do env ficam no arquivo)."""
 
     CTX = {"aba": "sistema", "usuario": "teste", "admin": True,
            "servicos": {}, "modelos": {}, "nomes": {}, "ativos": {},
            "motor": {"chat": None, "embed": True, "vram_mi": None,
                      "agente": None, "rodando": []},
            "provedores_externos": [], "prov_conhecidos": [],
-           "grupos_cfg": {},
            "consulta": {"modo": "hibrido", "rag": True, "llm": True,
                         "colecoes": None, "mcps": []},
            "consulta_colecoes": [{"nome": "culinaria", "points": 10}],
@@ -103,10 +103,13 @@ class TestSistemaRender:
                      'name="colecoes"', 'name="mcps"', "pesquisa-web"):
             assert alvo in html, f"falta {alvo}"
 
-    def test_grupo_consulta_fora_do_form_env(self):
+    def test_form_env_fora_da_tela(self):
+        """Pedido do dono 12/09: configurações do .env não aparecem na tela
+        Sistema — só o que se gerencia na hora (coleções, modo, MCPs)."""
         html = _env().get_template("sistema.html").render(**self.CTX)
-        assert 'name="RAG_ATIVO"' not in html     # uma fonte de edição só
-        assert 'name="MCP_ATIVOS"' not in html
+        assert 'hx-post="/hx/settings"' not in html   # form de .env saiu
+        assert 'name="RAG_ATIVO"' not in html         # .env cru nem a título
+        assert 'name="TEMPERATURE"' not in html
 
 
 class TestJobCard:

@@ -6,44 +6,13 @@ from api.base import *  # noqa: F401,F403 — contrato do split
 from fastapi import APIRouter
 
 router = APIRouter()
-@router.post("/hx/settings")
-async def hx_settings(request: Request):
-    """Salva TODAS as chaves do registro FIELDS no .env e recarrega SEM
-    restart (aplica na hora — TEMPERATURE/cache/scores/etc). Regras:
-    tipo validado (422 em valor inválido); SEGREDO mascarado/vazio NÃO
-    regrava (só troca explícita); bool aceita 1/0/true/false."""
-    _exigir_admin(request)
-    form = await request.form()
-    erros = []
-    trocas = 0
-    for chave, (grupo, rotulo, tipo) in _campos_config().items():
-        if grupo == "Consulta":
-            continue  # 🎯 editado SÓ no cartão Consulta (/hx/consulta) —
-            # uma fonte de edição na UI p/ estas chaves
-        if chave not in form:
-            continue
-        valor = str(form.get(chave) or "").strip()
-        if not valor or "•" in valor:
-            continue   # vazio/máscara: mantém o atual (segredo nunca some)
-        # segredo: SECRETOS fixos + chaves de PROVEDOR dinâmicas (PROV_*_KEY)
-        if (tipo == "secret" and chave not in config.SECRETOS
-                and not (chave.startswith("PROV_") and chave.endswith("_KEY"))):
-            continue
-        if tipo in ("int", "float"):
-            try:
-                (int if tipo == "int" else float)(valor)
-            except ValueError:
-                erros.append(f"{chave}: '{valor}' não é {('inteiro' if tipo == 'int' else 'número')}")
-                continue
-        config.set_env_inplace(chave, valor)
-        trocas += 1
-    config.reload()
-    if erros:
-        raise HTTPException(status_code=422, detail="; ".join(erros)
-                            + f" — os demais {trocos_label(trocas)} salvos")
-    resp = RedirectResponse("/sistema", status_code=303)
-    resp.headers["HX-Refresh"] = "true"
-    return resp
+
+# ⚙️ POST /hx/settings REMOVIDO (pedido do dono 12/09: "não quero
+# configurações do env aqui, essas coisas ficam no env"): o formulário de
+# .env saiu da tela Sistema — chaves de infra são editadas DIRETO no
+# arquivo (aplicam no restart). O PUT /api/settings segue de pé para
+# automação. As 4 chaves da consulta (RAG_ATIVO/LLM_ATIVO/RAG_COLECOES/
+# MCP_ATIVOS) continuam gerenciáveis NA HORA no cartão 🎯 (/hx/consulta).
 
 
 @router.post("/hx/consulta")

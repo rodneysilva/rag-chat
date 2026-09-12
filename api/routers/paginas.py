@@ -221,24 +221,10 @@ def pagina_sistema(request: Request):
     except Exception as e:
         motor["agente"] = f"fora do ar ({str(e)[:80]})"
     ctx["motor"] = motor
-    # ⚙️ CONFIGURAÇÕES: TODAS as chaves editáveis do registro FIELDS, com o
-    # VALOR ATUAL do .env — agrupadas por categoria, segredos MASCARADOS.
-    # (bug antigo: a lógica da máscara era invertida — chave DEFINIDA sumia
-    # do form em vez de aparecer como ••••; parecia "perdida".)
-    cfg_atual = config.as_dict()
-    ctx["config_atual"] = cfg_atual   # usados avulsos no cabeçalho (KPIs)
-    grupos_cfg: dict = {}
-    for chave, (grupo, rotulo, tipo) in _campos_config().items():
-        if grupo == "Consulta":
-            continue  # 🎯 vive no cartão Consulta — UMA fonte de edição na UI
-        bruto = cfg_atual.get(chave, os.getenv(chave, ""))
-        grupos_cfg.setdefault(grupo, []).append({
-            "chave": chave, "rotulo": rotulo, "tipo": tipo,
-            "dica": _DICAS_CAMPO.get(chave, rotulo),
-            "valor": "" if tipo == "secret" else str(bruto or ""),
-            "definido": bool(bruto),   # secret definido mostra placeholder ••••
-        })
-    ctx["grupos_cfg"] = grupos_cfg
+    # ⚙️ grupos_cfg (form de .env) REMOVIDO (pedido do dono 12/09: "não quero
+    # configurações do env aqui, essas coisas ficam no env") — chaves de
+    # infra são editadas no ARQUIVO; a tela só traz o que se gerencia na
+    # hora (🎯 Consulta, 🧠 Motor, ☁️ Provedores, 🔌 Serviços)
     # 🎯 CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md):
     # estado resolvido + listas para o cartão 🎯 Consulta do /sistema
     ctx["consulta"] = consulta.resumo()

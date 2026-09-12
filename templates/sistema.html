@@ -4,10 +4,11 @@
 <div class="pagina-conteudo">
 
 <h1>Sistema</h1>
-<p class="descricao">o que está RODANDO e o que decide a consulta — cada
-  cartão é um objeto: <b>🧠 Motor</b> (GPU da estação), <b>🎯 Consulta</b>
-  (modo/escopo/MCPs da configuração), <b>☁️ Provedores</b> (cadastro cloud),
-  <b>🔌 Serviços</b> (infra) e <b>⚙️ Configurações</b> (.env).</p>
+<p class="descricao">o que está RODANDO e o que se gerencia <b>na hora</b> —
+  cada cartão é um objeto: <b>🧠 Motor</b> (GPU da estação), <b>🎯 Consulta</b>
+  (modo/escopo/MCPs, aplica na hora), <b>☁️ Provedores</b> (cadastro cloud)
+  e <b>🔌 Serviços</b> (infra). O resto é configuração do <b>.env</b> —
+  editada no arquivo, sem tela (aplica no restart da API).</p>
 
 {# ═══ OBJETO 1: MOTOR — onde a conversa roda AGORA ═══ ═══ ═══ ═══ ═══ ═══ #}
 <section class="cartao">
@@ -204,127 +205,60 @@
   </div>
 </section>
 
-{# ═══ OBJETO 5: CONFIGURAÇÕES — .env (grupo Consulta fica no 🎯 acima) ═════ #}
-<section class="cartao">
-  <h2>⚙️ Configurações (.env)</h2>
-  <p class="mini" style="margin-top:-.4rem;">aplica na hora, sem reiniciar —
-    segredo definido fica mascarado; vazio mantém o atual.</p>
-  <form hx-post="/hx/settings" hx-swap="none">
-    {% for grupo, campos in grupos_cfg.items() %}
-    <h3 class="mini" style="margin:.9rem 0 .3rem; text-transform:uppercase; letter-spacing:.04em;">{{ grupo }}</h3>
-    <div class="linha">
-      {% for c in campos %}
-      {% if c.tipo == "text" %}
-      <div style="flex:1 1 100%;"><label>{{ c.chave }} <span class="campo-dica" tabindex="0" data-dica="{{ c.dica | e }}">ⓘ</span></label>
-        <textarea name="{{ c.chave }}" rows="2" class="w100">{{ c.valor }}</textarea></div>
-      {% else %}
-      <div class="estreito" style="flex:1 1 14rem;">
-        <label>{{ c.chave }}{% if c.tipo == "secret" %} 🔒{% endif %} <span class="campo-dica" tabindex="0" data-dica="{{ c.dica | e }}">ⓘ</span></label>
-        {% if c.tipo == "secret" %}
-        <input type="password" name="{{ c.chave }}" autocomplete="off"
-               placeholder="{{ '•••••••• definida — digite para trocar' if c.definido else 'não definida' }}"
-               class="w100">
-        {% elif c.tipo in ("int", "float") %}
-        <input type="number" {% if c.tipo == "float" %}step="0.01"{% endif %} name="{{ c.chave }}" value="{{ c.valor }}" class="w100">
-        {% else %}
-        <input type="text" name="{{ c.chave }}" value="{{ c.valor }}" class="w100">
-        {% endif %}
-      </div>
-      {% endif %}
-      {% endfor %}
-    </div>
-    {% endfor %}
-    <div style="margin-top:.7rem; display:flex; gap:.6rem; align-items:center;">
-      <button class="primario" type="submit" id="btn-salvar-cfg">salvar</button>
-      <span class="mini" id="cfg-feedback"></span>
-    </div>
-  </form>
-  <script>
-    /* UX DO SALVAR: estado no botão + TOAST de sucesso/erro (endpoint
-       responde redirect+HX-Refresh no sucesso; 422 JSON mostra o detalhe
-       SEM recarregar). */
-    (function () {
-      const form = document.querySelector('form[hx-post="/hx/settings"]');
-      if (!form) return;
-      const btn = document.getElementById("btn-salvar-cfg");
-      const fb = document.getElementById("cfg-feedback");
-      let toastEl = document.getElementById("toast-global");
-      if (!toastEl) {
-        toastEl = document.createElement("div");
-        toastEl.id = "toast-global"; toastEl.className = "ok";
-        document.body.appendChild(toastEl);
-      }
-      const toast = (msg, tipo) => {
-        toastEl.textContent = msg;
-        toastEl.className = "mostrar " + (tipo || "ok");
-        clearTimeout(toast._t);
-        toastEl._t = setTimeout(() => (toastEl.className = ""), 4200);
-      };
-      form.addEventListener("htmx:beforeRequest", () => {
-        btn.disabled = true; btn.textContent = "salvando…"; fb.textContent = "…";
-      });
-      form.addEventListener("htmx:afterRequest", async (ev) => {
-        const xhr = ev.detail.xhr;
-        btn.disabled = false; btn.textContent = "salvar";
-        if (ev.detail.successful) {
-          toast("✓ configurações salvas e aplicadas — recarregando…", "ok");
-          setTimeout(() => location.reload(), 700);
-          return;
-        }
-        let detalhe = "HTTP " + xhr.status;
-        try { detalhe = (await (new Response(xhr.response)).json()).detail || detalhe; }
-        catch (_) {}
-        fb.textContent = "⚠️ " + detalhe;
-        toast("⚠️ " + detalhe, "erro");
-      });
-    })();
-    // ☁️ cadastro em 1 CLIQUE: card do provedor conhecido preenche o form
-    function usarProv(id, nome, url) {
-      const f = document.getElementById("form-prov");
-      f.pid.value = id; f.pnome.value = nome; f.purl.value = url;
-      f.pkey.focus();
-      document.getElementById("prov-res").textContent =
-        "preenchido — cole a chave da API e clique em cadastrar";
+{# ═══ ⚙️ CONFIGURAÇÕES DO .ENV: FORA DA TELA (pedido do dono 12/09: "não
+   quero configurações do env aqui, essas coisas ficam no env — só quero
+   coisas que posso gerenciar na hora, como as coleções"): URLs, scores,
+   chunk, prompts e chaves são editados DIRETO no arquivo (aplicam no
+   restart da API; PUT /api/settings segue de pé para automação). Na tela
+   ficam SÓ os controles de runtime: 🎯 Consulta, 🧠 Motor, ☁️ Provedores,
+   🔌 Serviços e o registro 🔌 MCP. #}
+<script>
+  // ☁️ PROVEDORES (script do cartão acima — cadastro em 1 clique + form)
+  function usarProv(id, nome, url) {
+    const f = document.getElementById("form-prov");
+    f.pid.value = id; f.pnome.value = nome; f.purl.value = url;
+    f.pkey.focus();
+    document.getElementById("prov-res").textContent =
+      "preenchido — cole a chave da API e clique em cadastrar";
+  }
+  // chegou por ?prov=<id> (atalho de cadastro): pré-preenche e
+  // a pessoa SÓ cola a apikey (diretriz do dono: "em sistema eu só
+  // incluo a apikey") — dados via data-attribute (jinja NUNCA no JS cru)
+  (function () {
+    const q = new URLSearchParams(location.search).get("prov");
+    if (!q) return;
+    const CONH = JSON.parse(
+      document.getElementById("prov-dados").dataset.conhecidos || "[]");
+    const c = CONH.find(x => x.id === q.toLowerCase());
+    if (c) {
+      usarProv(c.id, c.nome, c.base_url);
+      document.getElementById("form-prov").scrollIntoView({block: "center"});
     }
-    // chegou por ?prov=<id> (atalho de cadastro): pré-preenche e
-    // a pessoa SÓ cola a apikey (diretriz do dono: "em sistema eu só
-    // incluo a apikey") — dados via data-attribute (jinja NUNCA no JS cru)
-    (function () {
-      const q = new URLSearchParams(location.search).get("prov");
-      if (!q) return;
-      const CONH = JSON.parse(
-        document.getElementById("prov-dados").dataset.conhecidos || "[]");
-      const c = CONH.find(x => x.id === q.toLowerCase());
-      if (c) {
-        usarProv(c.id, c.nome, c.base_url);
-        document.getElementById("form-prov").scrollIntoView({block: "center"});
-      }
-    })();
-    // ☁️ CADASTRO: grava no .env na hora e devolve os modelos da própria API
-    async function cadastrarProv(f) {
-      const res = document.getElementById("prov-res");
-      res.textContent = "cadastrando e consultando a API…";
-      try {
-        const r = await fetch("/api/provedores/cadastrar", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            id: f.pid.value, nome: f.pnome.value,
-            base_url: f.purl.value, api_key: f.pkey.value,
-            modelos: f.pmodelos.value})
-        });
-        const d = await r.json();
-        if (!r.ok) { res.textContent = "⚠️ " + (d.detail || "erro"); return; }
-        const n = (d.modelos || []).length;
-        res.textContent = "✅ " + d.id + " cadastrado — " + n + " modelo(s): "
-          + (d.modelos || []).map(m => m.nome).slice(0, 8).join(", ")
-          + ((d.modelos || []).length > 8 ? "…" : "") + ". " + d.dica;
-        setTimeout(() => location.reload(), 2600);
-      } catch (e) { res.textContent = "⚠️ " + e; }
-      return false;
-    }
-  </script>
-</section>
+  })();
+  // ☁️ CADASTRO: grava no .env na hora e devolve os modelos da própria API
+  async function cadastrarProv(f) {
+    const res = document.getElementById("prov-res");
+    res.textContent = "cadastrando e consultando a API…";
+    try {
+      const r = await fetch("/api/provedores/cadastrar", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          id: f.pid.value, nome: f.pnome.value,
+          base_url: f.purl.value, api_key: f.pkey.value,
+          modelos: f.pmodelos.value})
+      });
+      const d = await r.json();
+      if (!r.ok) { res.textContent = "⚠️ " + (d.detail || "erro"); return; }
+      const n = (d.modelos || []).length;
+      res.textContent = "✅ " + d.id + " cadastrado — " + n + " modelo(s): "
+        + (d.modelos || []).map(m => m.nome).slice(0, 8).join(", ")
+        + ((d.modelos || []).length > 8 ? "…" : "") + ". " + d.dica;
+      setTimeout(() => location.reload(), 2600);
+    } catch (e) { res.textContent = "⚠️ " + e; }
+    return false;
+  }
+</script>
 
 <script>
   /* 🎯 CONSULTA: mesmo UX do salvar configurações (redirect+refresh no
