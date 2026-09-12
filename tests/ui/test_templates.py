@@ -48,22 +48,25 @@ class TestTemplatesParseiam:
 class TestChatRender:
     CTX = {"aba": "chat", "usuario": "teste", "admin": False,
            "mensagens": [{"role": "user", "content": "oi"}],
-           "colecoes": [{"nome": "culinaria", "points": 10}],
-           "cache": {"online": True, "entradas": 3},
-           "modelos_chat": [{"nome": "qwen", "gb": 4.7, "ativo": True}],
-           "modelos_chat_grupos": [],
-           "mcps": []}
+           "llm_ativo": True,
+           "cache": {"online": True, "entradas": 3}}
 
-    def test_composer_completo(self):
+    def test_composer_reduzido(self):
+        """🎯 Consulta consolidada (spec consulta_consolidada.md): o composer
+        NÃO tem seletores de modo/modelo/coleções/MCPs — só texto, enviar,
+        painel e nova (a ✨ segue com a LLM ligada)."""
         html = _env().get_template("chat.html").render(**self.CTX)
-        for alvo in ('id="pergunta"',
-                     'class="primario enviar-btn"', 'name="mode"',
-                     'name="model"', 'name="colecoes"'):
+        for alvo in ('id="pergunta"', 'class="primario enviar-btn"',
+                     'id="btn-painel"', 'id="btn-prompt"'):
             assert alvo in html, f"falta {alvo}"
+        for fora in ('name="mode"', 'name="model"', 'name="colecoes"',
+                     'name="mcps"', 'id="colecoes-box"', 'id="mcp-box"'):
+            assert fora not in html, f"{fora} não deveria existir"
 
-    def test_colecoes_abertas_por_padrao(self):
-        html = _env().get_template("chat.html").render(**self.CTX)
-        assert 'id="colecoes-box" open' in html
+    def test_prompt_some_com_llm_desligada(self):
+        ctx = dict(self.CTX, llm_ativo=False)
+        html = _env().get_template("chat.html").render(**ctx)
+        assert 'id="btn-prompt"' not in html   # ✨ exige LLM
 
     def test_mensagens_da_sessao_renderizam(self):
         html = _env().get_template("_palco.html").render(
@@ -76,6 +79,34 @@ class TestChatRender:
         html = _env().get_template("chat.html").render(**self.CTX)
         for n, js in enumerate(re.findall(r"<script>(.*?)</script>", html, re.S), 1):
             assert _js_valido(js), f"JS bloco {n} com erro de sintaxe"
+
+
+class TestSistemaRender:
+    """Cartão 🎯 Consulta (spec consulta_consolidada.md) — a fonte única de
+    modo/escopo/MCPs editável pela administração."""
+
+    CTX = {"aba": "sistema", "usuario": "teste", "admin": True,
+           "servicos": {}, "modelos": {}, "nomes": {}, "ativos": {},
+           "motor": {"chat": None, "embed": True, "vram_mi": None,
+                     "agente": None, "rodando": []},
+           "provedores_externos": [], "prov_conhecidos": [],
+           "grupos_cfg": {},
+           "consulta": {"modo": "hibrido", "rag": True, "llm": True,
+                        "colecoes": None, "mcps": []},
+           "consulta_colecoes": [{"nome": "culinaria", "points": 10}],
+           "consulta_mcps": []}
+
+    def test_cartao_consulta(self):
+        html = _env().get_template("sistema.html").render(**self.CTX)
+        for alvo in ('hx-post="/hx/consulta"', 'name="rag_ativo"',
+                     'name="llm_ativo"', 'name="escopo"',
+                     'name="colecoes"', 'name="mcps"', "pesquisa-web"):
+            assert alvo in html, f"falta {alvo}"
+
+    def test_grupo_consulta_fora_do_form_env(self):
+        html = _env().get_template("sistema.html").render(**self.CTX)
+        assert 'name="RAG_ATIVO"' not in html     # uma fonte de edição só
+        assert 'name="MCP_ATIVOS"' not in html
 
 
 class TestJobCard:

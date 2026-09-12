@@ -229,6 +229,8 @@ def pagina_sistema(request: Request):
     ctx["config_atual"] = cfg_atual   # usados avulsos no cabeçalho (KPIs)
     grupos_cfg: dict = {}
     for chave, (grupo, rotulo, tipo) in _campos_config().items():
+        if grupo == "Consulta":
+            continue  # 🎯 vive no cartão Consulta — UMA fonte de edição na UI
         bruto = cfg_atual.get(chave, os.getenv(chave, ""))
         grupos_cfg.setdefault(grupo, []).append({
             "chave": chave, "rotulo": rotulo, "tipo": tipo,
@@ -237,6 +239,18 @@ def pagina_sistema(request: Request):
             "definido": bool(bruto),   # secret definido mostra placeholder ••••
         })
     ctx["grupos_cfg"] = grupos_cfg
+    # 🎯 CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md):
+    # estado resolvido + listas para o cartão 🎯 Consulta do /sistema
+    ctx["consulta"] = consulta.resumo()
+    try:
+        ctx["consulta_colecoes"] = collections(forcar=True) or []
+    except Exception:
+        ctx["consulta_colecoes"] = []
+    try:
+        ctx["consulta_mcps"] = [s.get("nome") or s for s
+                                in mcp_registry.list_servers()]
+    except Exception:
+        ctx["consulta_mcps"] = []
     return TEMPLATES.TemplateResponse(request, "sistema.html", ctx)
 
 

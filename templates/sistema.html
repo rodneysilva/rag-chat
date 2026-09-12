@@ -4,10 +4,10 @@
 <div class="pagina-conteudo">
 
 <h1>Sistema</h1>
-<p class="descricao">o que está RODANDO, os provedores cloud e as
-  configurações — cada cartão é um objeto: <b>🧠 Motor</b> (GPU da estação),
-  <b>☁️ Provedores</b> (cadastro cloud), <b>🔌 Serviços</b> (infra) e
-  <b>⚙️ Configurações</b> (.env).</p>
+<p class="descricao">o que está RODANDO e o que decide a consulta — cada
+  cartão é um objeto: <b>🧠 Motor</b> (GPU da estação), <b>🎯 Consulta</b>
+  (modo/escopo/MCPs da configuração), <b>☁️ Provedores</b> (cadastro cloud),
+  <b>🔌 Serviços</b> (infra) e <b>⚙️ Configurações</b> (.env).</p>
 
 {# ═══ OBJETO 1: MOTOR — onde a conversa roda AGORA ═══ ═══ ═══ ═══ ═══ ═══ #}
 <section class="cartao">
@@ -54,7 +54,89 @@
   </details>
 </section>
 
-{# ═══ OBJETO 2: PROVEDORES CLOUD — cadastro e estado ═══ ═══ ═══ ═══ ═══ ══ #}
+{# ═══ OBJETO 2: 🎯 CONSULTA — a config que manda no chat e na API /v1 ══════ #}
+<section class="cartao">
+  <h2>🎯 Consulta — como o chat e a API respondem</h2>
+  <p class="mini" style="margin-top:-.4rem;">modo, escopo e ferramentas de
+    TODA consulta nascem DAQUI (spec consulta_consolidada.md) — o chat e a
+    API OpenAI-compat só consomem. Aplica na hora, sem restart.</p>
+  <form hx-post="/hx/consulta" hx-swap="none" style="margin-top:.5rem;">
+    <div class="linha" style="align-items:end;">
+      <div class="estreito" style="flex:1 1 12rem;">
+        <label>📚 RAG — busca na base</label>
+        <label class="clicavel"><input type="radio" name="rag_ativo" value="1"
+               {% if consulta.rag %}checked{% endif %}> ligado</label>
+        <label class="clicavel"><input type="radio" name="rag_ativo" value="0"
+               {% if not consulta.rag %}checked{% endif %}> desligado</label>
+      </div>
+      <div class="estreito" style="flex:1 1 12rem;">
+        <label>🧠 LLM — conversa</label>
+        <label class="clicavel"><input type="radio" name="llm_ativo" value="1"
+               {% if consulta.llm %}checked{% endif %}> ligado</label>
+        <label class="clicavel"><input type="radio" name="llm_ativo" value="0"
+               {% if not consulta.llm %}checked{% endif %}> desligado</label>
+      </div>
+      <div style="flex:2 1 16rem;">
+        <label>modo efetivo</label>
+        <div><b>{% if consulta.modo %}{{ consulta.modo }}{% else %}⚠️ indisponível (RAG e LLM desligados — toda consulta devolve erro){% endif %}</b></div>
+        <div class="mini">ambos → híbrido · só RAG → rag (digest, zero LLM) · só LLM → livre</div>
+      </div>
+    </div>
+    <h3 class="mini" style="margin:.9rem 0 .3rem; text-transform:uppercase; letter-spacing:.04em;">escopo (coleções consultadas)</h3>
+    <label class="clicavel"><input type="radio" name="escopo" value="todas"
+           {% if consulta.colecoes is none %}checked{% endif %}>
+      todas as visíveis ({{ consulta_colecoes | length }})</label>
+    <label class="clicavel"><input type="radio" name="escopo" value="selecionadas"
+           {% if consulta.colecoes is not none %}checked{% endif %}>
+      selecionadas:</label>
+    <div class="colecoes-grid" id="consulta-colecoes" style="margin:.4rem 0 .6rem;">
+      {% for c in consulta_colecoes %}
+      <label class="colecao-check"><input type="checkbox" name="colecoes"
+             value="{{ c.nome }}" {% if c.nome in (consulta.colecoes or []) %}checked{% endif %}>
+        {{ c.nome }} <span class="mini">({{ c.points }})</span></label>
+      {% else %}
+      <p class="mini">nenhuma coleção visível (Qdrant vazio/offline?)</p>
+      {% endfor %}
+    </div>
+    <h3 class="mini" style="margin:.9rem 0 .3rem; text-transform:uppercase; letter-spacing:.04em;">🔌 ferramentas MCP ativas (valem para toda consulta)</h3>
+    <div class="colecoes-grid">
+      <label class="colecao-check"><input type="checkbox" name="mcps"
+             value="pesquisa-web" {% if "pesquisa-web" in consulta.mcps %}checked{% endif %}>
+        pesquisa-web <span class="mini">🌐 nativa — páginas completas</span></label>
+      {% for m in consulta_mcps %}
+      <label class="colecao-check"><input type="checkbox" name="mcps"
+             value="{{ m }}" {% if m in consulta.mcps %}checked{% endif %}> {{ m }}</label>
+      {% endfor %}
+    </div>
+    <p class="mini" style="margin:.4rem 0 0;">MCPs reais exigem a LLM ligada
+      (loop de raciocínio); com ela desligada são pulados com aviso.
+      Coleções mortas saem do escopo em silêncio.</p>
+    <div style="margin-top:.7rem; display:flex; gap:.6rem; align-items:center;">
+      <button class="primario" type="submit" id="btn-salvar-consulta">salvar</button>
+      <span class="mini" id="consulta-feedback"></span>
+    </div>
+  </form>
+</section>
+
+{# ═══ OBJETO 2b: MCP — registro/instalação (veio da Biblioteca; a ATIVAÇÃO
+     de cada servidor é o 🎯 acima) ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═══ #}
+<details class="cartao detalhe-cab" data-painel="sim" id="mcp-cartao">
+  <summary class="link-suave">🔌 servidores MCP — instalar e registrar</summary>
+  <p class="mini" style="margin:.5rem 0 .2rem;">
+    MCP = ferramentas externas que o assistente pode USAR ao responder.
+    Registre aqui; a ATIVAÇÃO de cada um (o que entra na consulta) é no
+    cartão 🎯 acima. Instale do catálogo com um clique — ou aponte uma
+    URL/comando próprio.
+  </p>
+  <div id="mcp-lista" class="mini">carregando…</div>
+  <div class="linha" style="margin-top:.6rem; align-items:end;">
+    <div style="flex:1;"><label class="mini">instalar por entrada (URL http · comando npx/uvx · github.com/owner/repo)</label>
+      <input type="text" id="mcp-entrada" placeholder="ex.: https://mcp.exemplo.com/sse ou npx -y @modelo/context-serve" style="width:100%; padding:.3rem .5rem;"></div>
+    <button type="button" class="primario" onclick="instalarMcp(this)">instalar</button>
+  </div>
+</details>
+
+{# ═══ OBJETO 3: PROVEDORES CLOUD — cadastro e estado ═══ ═══ ═══ ═══ ═══ ══ #}
 <section class="cartao">
   <h2>☁️ Provedores cloud</h2>
   <div id="prov-dados" data-conhecidos='{{ prov_conhecidos | tojson }}' hidden></div>
@@ -102,7 +184,7 @@
   <p id="prov-res" class="mini" style="margin:.5rem 0 0;"></p>
 </section>
 
-{# ═══ OBJETO 3: SERVIÇOS — infraestrutura ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═ #}
+{# ═══ OBJETO 4: SERVIÇOS — infraestrutura ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═ #}
 <section class="cartao">
   <h2>🔌 Serviços</h2>
   <table>
@@ -122,7 +204,7 @@
   </div>
 </section>
 
-{# ═══ OBJETO 4: CONFIGURAÇÕES — .env ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═══ ═══ ══ #}
+{# ═══ OBJETO 5: CONFIGURAÇÕES — .env (grupo Consulta fica no 🎯 acima) ═════ #}
 <section class="cartao">
   <h2>⚙️ Configurações (.env)</h2>
   <p class="mini" style="margin-top:-.4rem;">aplica na hora, sem reiniciar —
@@ -243,5 +325,107 @@
     }
   </script>
 </section>
+
+<script>
+  /* 🎯 CONSULTA: mesmo UX do salvar configurações (redirect+refresh no
+     sucesso; 422 JSON mostra o detalhe SEM recarregar). */
+  (function () {
+    const form = document.querySelector('form[hx-post="/hx/consulta"]');
+    if (!form) return;
+    const btn = document.getElementById("btn-salvar-consulta");
+    const fb = document.getElementById("consulta-feedback");
+    form.addEventListener("htmx:beforeRequest", () => {
+      btn.disabled = true; btn.textContent = "salvando…"; fb.textContent = "…";
+    });
+    form.addEventListener("htmx:afterRequest", async (ev) => {
+      const xhr = ev.detail.xhr;
+      btn.disabled = false; btn.textContent = "salvar";
+      if (ev.detail.successful) {
+        fb.textContent = "✓ aplicado";
+        setTimeout(() => location.reload(), 600);
+        return;
+      }
+      let detalhe = "HTTP " + xhr.status;
+      try { detalhe = (await (new Response(xhr.response)).json()).detail || detalhe; }
+      catch (_) {}
+      fb.textContent = "⚠️ " + detalhe;
+    });
+  })();
+
+  /* 🔌 MCP: registro/instalação (veio da Biblioteca) + REMOÇÃO por
+     servidor (DELETE /api/mcp/{nome} — o ✕ ao lado do nome). */
+  async function carregarMcpsSistema() {
+    const zona = document.getElementById("mcp-lista");
+    if (!zona) return;
+    try {
+      const [reg, cat] = await Promise.all([
+        (await fetch("/api/mcp")).json(),
+        (await fetch("/api/mcp/conhecidos")).json(),
+      ]);
+      const instalados = new Set((Array.isArray(reg) ? reg : []).map(m => (m.nome || "").toLowerCase()));
+      const catalogo = (cat && (cat.conhecidos || cat)) || [];
+      let html = "";
+      if (instalados.size) {
+        html += "<b>registrados:</b> " + [...instalados].map(n =>
+          n + " <button type='button' class='mini clicavel' title='remover do registro' " +
+          "onclick=\"removerMcp('" + n + "', this)\">✕</button>").join(" · ") + "<br>";
+      } else {
+        html += "nenhum servidor registrado ainda<br>";
+      }
+      const itens = Array.isArray(catalogo) ? catalogo : Object.values(catalogo);
+      html += "<div class='colecoes-grid' style='margin-top:.4rem;'>";
+      for (const m of itens) {
+        const nativo = m.nativo || m.transport === "nativo";
+        const ok = instalados.has(String(m.nome || m.nome_display || "").toLowerCase());
+        html += "<label class='colecao-check' style='align-items:start;'>" +
+          "<input type='checkbox' class='mcp-inst' value='" + (m.nome || "") + "'" +
+          (nativo ? " checked disabled" : (ok ? " checked disabled" : "")) + "> " +
+          "<span><b>" + (m.nome || "?") + "</b>" +
+          (m.rotulo && m.rotulo !== m.nome ? " — <span class='mini'>" + m.rotulo + "</span>" : "") +
+          " <span class='mini'>(" + (m.transport || m.tipo || "?") + ")</span><br>" +
+          "<span class='mini'>" + (m.descricao || m.o_que_faz || "").slice(0, 130) + "</span></span></label>";
+      }
+      html += "</div>";
+      zona.innerHTML = html;
+    } catch {
+      zona.textContent = "MCP indisponível agora";
+    }
+  }
+  async function removerMcp(nome, btn) {
+    if (!confirm("remover o servidor MCP '" + nome + "' do registro?")) return;
+    const o = btn.textContent; btn.textContent = "…"; btn.disabled = true;
+    try {
+      const r = await fetch("/api/mcp/" + encodeURIComponent(nome), {method: "DELETE"});
+      if (!r.ok) throw new Error((await r.json()).detail || r.status);
+      btn.textContent = "✓ removido";
+      setTimeout(carregarMcpsSistema, 800);
+    } catch (e) { alert("falha: " + e.message); btn.textContent = o; btn.disabled = false; }
+  }
+  async function instalarMcp(btn) {
+    const entrada = document.getElementById("mcp-entrada").value.trim();
+    const marcados = [...document.querySelectorAll(".mcp-inst:checked:not(:disabled)")].map(c => c.value);
+    if (!entrada && !marcados.length) { alert("escolha do catálogo ou escreva uma entrada"); return; }
+    btn.disabled = true; btn.textContent = "instalando…";
+    try {
+      for (const nome of marcados) {
+        await fetch("/api/mcp/instalar", {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({nome})});
+      }
+      if (entrada) {
+        const r = await fetch("/api/mcp/instalar-job", {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({entrada})});
+        if (!r.ok) throw new Error((await r.json()).detail || r.status);
+        btn.textContent = "instalando (job)…";
+        setTimeout(carregarMcpsSistema, 8000);
+      }
+      btn.textContent = "✓ instalado";
+      carregarMcpsSistema();
+    } catch (e) { alert("falha: " + e.message); }
+    btn.disabled = false; setTimeout(() => (btn.textContent = "instalar"), 1500);
+  }
+  carregarMcpsSistema();
+</script>
 </div>
 {% endblock %}

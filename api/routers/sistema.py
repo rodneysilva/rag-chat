@@ -17,6 +17,9 @@ async def hx_settings(request: Request):
     erros = []
     trocas = 0
     for chave, (grupo, rotulo, tipo) in _campos_config().items():
+        if grupo == "Consulta":
+            continue  # 🎯 editado SÓ no cartão Consulta (/hx/consulta) —
+            # uma fonte de edição na UI p/ estas chaves
         if chave not in form:
             continue
         valor = str(form.get(chave) or "").strip()
@@ -38,6 +41,49 @@ async def hx_settings(request: Request):
     if erros:
         raise HTTPException(status_code=422, detail="; ".join(erros)
                             + f" — os demais {trocos_label(trocas)} salvos")
+    resp = RedirectResponse("/sistema", status_code=303)
+    resp.headers["HX-Refresh"] = "true"
+    return resp
+
+
+@router.post("/hx/consulta")
+async def hx_consulta(request: Request):
+    """🎯 CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md):
+    grava RAG_ATIVO/LLM_ATIVO/RAG_COLECOES/MCP_ATIVOS no .env — a fonte
+    ÚNICA de modo/escopo/ferramentas de TODA consulta (chat e API /v1).
+    EXCLUSIVO do administrador; aplica NA HORA (set_env_inplace+reload).
+    Ambos desligados é permitido (a consulta devolve MSG_INDISPONIVEL —
+    regra 2); 'selecionadas' sem nenhuma coleção é 422 (escopo vazio por
+    engano mataria a busca)."""
+    _exigir_admin(request)
+    form = await request.form()
+    rag = str(form.get("rag_ativo") or "0").strip() in ("1", "on", "true")
+    llm = str(form.get("llm_ativo") or "0").strip() in ("1", "on", "true")
+    escopo = str(form.get("escopo") or "todas").strip()
+    colecoes: list[str] = []
+    for c in form.getlist("colecoes"):
+        c = str(c).strip()
+        if c and c not in colecoes:
+            colecoes.append(c)
+    mcps: list[str] = []
+    for m in form.getlist("mcps"):
+        m = str(m).strip()
+        if m and m not in mcps:
+            mcps.append(m)
+    if escopo == "selecionadas" and not colecoes:
+        raise HTTPException(
+            status_code=422,
+            detail="escopo 'selecionadas' sem nenhuma coleção marcada — "
+                   "marque ao menos uma ou volte para 'todas as visíveis'")
+    config.set_env_inplace("RAG_ATIVO", "1" if rag else "0")
+    config.set_env_inplace("LLM_ATIVO", "1" if llm else "0")
+    config.set_env_inplace("RAG_COLECOES",
+                           ",".join(colecoes) if escopo == "selecionadas" else "")
+    config.set_env_inplace("MCP_ATIVOS", ",".join(mcps))
+    config.reload()
+    print(f"🎯 consulta consolidada salva: RAG={int(rag)} LLM={int(llm)} "
+          f"escopo={'todas' if escopo != 'selecionadas' else colecoes} "
+          f"MCPs={mcps or 'nenhum'}")
     resp = RedirectResponse("/sistema", status_code=303)
     resp.headers["HX-Refresh"] = "true"
     return resp
