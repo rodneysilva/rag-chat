@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
-from core import agent, auth, bussola, catalog, config, contadores, executor, grafo, hf, limpeza, modelos, mcp_registry, rag, rerank, sessions
+from core import agent, auth, bussola, catalog, config, consulta, contadores, executor, grafo, hf, limpeza, modelos, mcp_registry, rag, rerank, sessions
 from core import historico, resolucoes, telemetria
 from core.linguagens import LINGUAGENS
 from core.auto import responde_auto, _web_aprofundado
@@ -74,6 +74,7 @@ __all__ = [
     "bussola",
     "catalog",
     "config",
+    "consulta",
     "contadores",
     "executor",
     "grafo",
@@ -1505,6 +1506,37 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     contadores.set_servico("chat")
     contadores.balanco_reset()  # tokens DESTA resposta: balanço local (sem
     # cruzar com totais globais de outros processos — fim da divergência)
+    # 🎯 CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md —
+    # pedido do dono 11/09: "no chat ou na API openai, ela irá somente
+    # receber informações já consolidadas"): modo/escopo/MCPs/modelo nascem
+    # da CONFIG da administração (.env, cartão 🎯 Consulta do /sistema);
+    # o que veio no payload é aceito por compatibilidade e IGNORADO (regra
+    # 5). Resolve ANTES do override de provedor — "prov:…" por mensagem
+    # também morre aqui. Ambos desligados não levanta ainda: MOCK_LLM
+    # precede os toggles (regra 7) e o relógio segue respondendo; o 503
+    # sai após esses guards.
+    _cons = consulta.resumo()
+    _ignorados = [k for k, v in (
+        ("mode", body.mode not in (None, "rag")),
+        ("model", body.model),
+        ("collection", body.collection),
+        ("collections", body.collections),
+        ("mcps", body.mcps)) if v]
+    if _ignorados:
+        log("🎯 config da administração vence — payload ignora: "
+            + ", ".join(_ignorados), "mensagem")
+    body.mode = _cons["modo"] or "hibrido"  # None = 503 adiante (após guards)
+    body.model = None          # modelo ativo = LLM_MODEL do .env
+    body.collection = None
+    body.collections = _cons["colecoes"]  # None = TODAS as visíveis (regra 3)
+    body.mcps = _cons["mcps"]  # pesquisa-web só se LISTADO (regra 4)
+    log("🎯 consulta consolidada: modo {} · RAG {} · LLM {} · escopo {} · "
+        "MCPs {}".format(
+            _cons["modo"] or "INDISPONÍVEL (503)",
+            "on" if _cons["rag"] else "off", "on" if _cons["llm"] else "off",
+            ", ".join(_cons["colecoes"]) if _cons["colecoes"]
+            is not None else "TODAS as visíveis",
+            ", ".join(_cons["mcps"]) or "nenhum"), "mensagem")
     # 🌐 PROVEDOR EXTERNO ("glm:glm-4.6" no model): override desta EXECUÇÃO
     # — a LLM sai do llama-server e vai para o endpoint configurado no .env.
     # A limpeza (set_override(None)) é feita nos CHAMADORES (finally) porque
@@ -1538,6 +1570,18 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             "(LLM não consultada: a data do treinamento do modelo mente)",
             "resposta")
         return _rel
+    # 🎯 AMBOS DESLIGADOS: não existe consulta (regra 2 da spec) — MOCK_LLM
+    # e o relógio acima seguiram valendo (MOCK precede os toggles, regra 7).
+    # O TEXTO vem da spec consulta_consolidada.md (palavras ao usuário fora
+    # do código — editar lá muda o card sem rebuild).
+    if _cons["modo"] is None:
+        from core.specs import valor as _valor_spec
+        raise HTTPException(
+            status_code=503,
+            detail=_valor_spec(
+                "consulta_consolidada", "MSG_INDISPONIVEL",
+                "⚠️ **Consulta indisponível** — RAG e LLM estão desligados na "
+                "configuração."))
     # 🧠 CICLO FRIO DA ESTAÇÃO (pedido do dono 10/09): o container do chat é
     # derrubado após 5 min ocioso (economia de GPU) e religado AQUI — antes
     # de cache/Qdrant/roteador, para a espera de carga (~90 s) aparecer no
@@ -1551,13 +1595,15 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     # dos fragmentos (embedding + Qdrant + rerank apenas).
     if rag.usa_llm_local() and body.mode != "rag":
         modelos.garantir_llm(log=log)
-    # 🌐 WEB POR INTENÇÃO: o pedido de busca na MENSAGEM ativa o mesmo
-    # motor do MCP "pesquisa-web" (DuckDuckGo → Serper, páginas inteiras
-    # como fragmentos [n]) — sem depender de marcar nada no composer.
+    # 🌐 WEB POR INTENÇÃO (regra 4 da spec consulta_consolidada.md): o
+    # pedido de busca na MENSAGEM NÃO liga mais a busca sozinho — o
+    # pseudo-MCP pesquisa-web entra pela config (MCP_ATIVOS) e o corpo
+    # acima já o trouxe. Sem ele na config, o pedido é INFORMATIVO (fim
+    # das surpresas: "pesquise na web" só busca quando o admin ativou).
     if MCP_WEB not in (body.mcps or []) and _pede_web(str(body.question or "")):
-        body.mcps = list(body.mcps or []) + [MCP_WEB]
-        log("🌐 pedido de PESQUISA NA WEB detectado na mensagem — busca "
-            "ativada (DuckDuckGo → Serper)", "mcp")
+        log("🌐 pedido de pesquisa na web na mensagem — pesquisa-web NÃO "
+            "está ativo na configuração (Sistema → 🎯 Consulta): sem busca",
+            "mcp")
     # escopo efetivo da consulta (TRI-ESTADO explícito — regra do dono):
     #   collections=[] (webui sem nada marcado) → SEM coleções: NÃO busca
     #   collections=None (CLI/API antiga)        → TODAS as visíveis
@@ -1620,13 +1666,17 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
         except Exception as _e:
             _rota = {"rota": "fluxo", "tipo": "",
                      "motivo": f"erro: {str(_e)[:40]}"}
-    if _rota["rota"] == "criar_como_hibrido":
+    if _rota["rota"] == "criar_como_hibrido" and consulta.llm_ativo():
         # 🧭 ESCALADA AUTOMÁTICA (pedido do dono: "como ele não sabe o que
         # estou falando?"): criação é impossível no rag (só o que está na
         # base) — em vez de recusar com um texto genérico, ESTA pergunta
         # sobe para o híbrido sozinha: a base orienta o estilo e o modelo
         # ESCREVE o que foi pedido. O modo escolhido segue salvo para as
         # próximas (perguntas factuais continuam no rag).
+        # 🎯 GUARDA (spec consulta_consolidada.md): com LLM_ATIVO=0 não há
+        # para onde escalar — o rag só chega aqui com a LLM desligada, a
+        # guarda é defensiva; sem ela a recusa orientada vira silêncio de
+        # 90 s de GPU religando por conta própria.
         log("🧭 pedido de CRIAÇÃO no modo rag — respondendo no modo "
             "HÍBRIDO automaticamente (a base orienta o estilo)", "mensagem")
         body.mode = "hibrido"
@@ -1646,6 +1696,17 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
     # MCP_WEB não conta como "ferramenta MCP" para a trivialidade: saudação
     # com busca marcada continua saudação (não se pesquisa "oi" na web)
     _mcps_reais = [m for m in (body.mcps or []) if m != MCP_WEB]
+    # 🎯 MCPs REAIS EXIGEM LLM (ReAct raciocina no modelo — regra 4 da spec
+    # consulta_consolidada.md): com LLM_ATIVO=0 são PULADOS com aviso no
+    # raciocínio; a pesquisa-web segue (entra no digest/fragmentos, não no
+    # loop de ferramentas)
+    if _mcps_reais and not consulta.llm_ativo():
+        from core.specs import valor as _valor_spec
+        log(_valor_spec("consulta_consolidada", "MSG_MCP_SEM_LLM",
+                        "🔌 ferramentas MCP exigem a LLM — MCPs pulados "
+                        "nesta resposta"), "mcp")
+        body.mcps = [m for m in (body.mcps or []) if m == MCP_WEB]
+        _mcps_reais = []
     eh_trivial = (body.mode == "hibrido" and not body.history and not _mcps_reais
                   and not body.estado_agente and 0 < len(_palavras) <= 6
                   and all(w in _TRIVIAIS for w in _palavras))
@@ -1761,7 +1822,8 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
         log("🤖 roteador decidindo (base / web / livre)…", "auto")
         try:
             client = QdrantClient(url=config.QDRANT_URL, timeout=30)
-            out = responde_auto(client, body.question, body.history, log=log)
+            out = responde_auto(client, body.question, body.history, log=log,
+                                colecoes_permitidas=colecoes)
         except Exception as e:
             print(f"❌ Erro no modo auto: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -2278,7 +2340,9 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
             # 💡 PEDIDO DE CRIAÇÃO em modo rag (bug real do dono: "quero uma
             # página em .net 10 sobre culinária" → recusa nua): criar algo
             # novo é trabalho do HÍBRIDO (base orienta o estilo, modelo
-            # escreve) — a recusa ORIENTA em vez de só negar
+            # escreve) — a recusa ORIENTA em vez de só negar. O TEXTO vem
+            # da spec rag_puro.md (MSG_RECUSA_CRIAR — pós-consulta
+            # consolidada o hibrido liga na administração, não no composer)
             _RE_CRIAR = re.compile(
                 r"\b(quer[oa]|cri[ae]|criar|faç|faz|fazer|mont[ae]|montar|"
                 r"ger[ae]|gerar|escrev|desenvolv|implement|constru|code|"
@@ -2289,13 +2353,11 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                 r"banco|tabela|servidor|fun[çc][ãa]|classe)\w*", re.I)
             if body.mode == "rag" and _RE_CRIAR.search(body.question or "") \
                     and _RE_COISA.search(body.question or ""):
-                answer = ("Não possuo dados confiáveis o suficiente nos "
-                          "documentos para responder.\n\n💡 Seu pedido parece "
-                          "ser de **criação** (página, código, API…): troque "
-                          "para o modo **híbrido** — a base orienta o estilo "
-                          "e o modelo escreve. Dica: para código, selecione "
-                          "só a coleção da tecnologia (ex.: dotnet) — misturar "
-                          "assuntos dilui a busca.")
+                from core.specs import valor as _spec_valor
+                answer = _spec_valor(
+                    "rag_puro", "MSG_RECUSA_CRIAR",
+                    "Não possuo dados confiáveis o suficiente nos documentos "
+                    "para responder.")
             else:
                 answer = ("Não possuo dados confiáveis o suficiente nos "
                           "documentos para responder.")

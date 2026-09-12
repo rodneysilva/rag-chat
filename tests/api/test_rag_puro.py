@@ -34,10 +34,19 @@ def _proibido(motivo: str):
 @pytest.fixture
 def cenario(monkeypatch):
     """Monta o mundo: base com 2 fragmentos médios (0.58–0.60: fora do
-    SCORE_DIRETO e acima do FRACO — nem resposta-direta, nem descarte)."""
+    SCORE_DIRETO e acima do FRACO — nem resposta-direta, nem descarte).
+
+    🎯 CONSULTA CONSOLIDADA (spec consulta_consolidada.md): o mode do
+    QueryIn NÃO decide mais nada — o fixture liga o RAG e DESLIGA a LLM
+    (modo efetivo rag) e fixa o escopo em 'c' (RAG_COLECOES). Testes
+    híbridos religam LLM_ATIVO no próprio corpo."""
     from api import base
     from core import rag, modelos, idioma
 
+    monkeypatch.setattr(base.config, "RAG_ATIVO", True)
+    monkeypatch.setattr(base.config, "LLM_ATIVO", False)
+    monkeypatch.setattr(base.config, "RAG_COLECOES", "c")
+    monkeypatch.setattr(base.config, "MCP_ATIVOS", "")
     achados = [
         (_doc("[vatapá passo a passo]\nO vatapá é prato paraense à base de dendê e pão."), 0.60, "c"),
         (_doc("O caruru acompanha o vatapá na tradição baiana."), 0.58, "c"),
@@ -77,6 +86,7 @@ def test_hibrido_mantem_o_ciclo_de_energia(cenario, monkeypatch):
     """O pulo do garantir_llm é SÓ do rag: híbrido segue acordando o modelo
     na estação (ciclo de energia 10/09) e gerando com a LLM."""
     base, rag = cenario
+    monkeypatch.setattr(base.config, "LLM_ATIVO", True)  # modo efetivo: híbrido
     chamadas = []
     monkeypatch.setattr(base.modelos, "garantir_llm",
                         lambda log=None: chamadas.append(1))
@@ -137,6 +147,9 @@ def test_rag_puro_digest_inclui_paginas_da_web(cenario, monkeypatch):
     o digest (limite 4) as descartava — segundos de download invisíveis.
     Agora o rerank pontua base+web JUNTOS e o digest segue a ordem dele."""
     base, rag = cenario
+    # 🎯 pesquisa-web ativa pela CONFIG (MCP_ATIVOS), não pelo payload —
+    # o mcps do QueryIn é ignorado pela consulta consolidada
+    monkeypatch.setattr(base.config, "MCP_ATIVOS", base.MCP_WEB)
 
     def _rerank(pergunta, achados, top_n=4, log=None, **kw):
         # a página da web (anexada por ÚLTIMO) é a mais relevante

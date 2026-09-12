@@ -334,6 +334,15 @@ def garantir_llm(log=None) -> bool:
     from . import config as _cfg
     from . import contadores as _cont
     _log = log or _cont.log_atual() or (lambda m, *a: None)
+    # 🎯 LLM_ATIVO=0 (spec consulta_consolidada.md, regra 10): switch
+    # LÓGICO da consulta — diferente dos markers *_off.marker (ciclo FÍSICO
+    # de GPU), este NÃO religa o que a administração desligou. Levanta
+    # RuntimeError; consumidores que degradam (rag.llm engole) seguem
+    # como "LLM indisponível".
+    if not getattr(_cfg, "LLM_ATIVO", True):
+        raise RuntimeError(
+            "LLM desligada na configuração (Sistema → 🎯 Consulta) — "
+            "religar é decisão do administrador, não do ciclo frio")
     if servido(CHAT_PORTA):
         return True  # no ar (cache 10 s): o custo da verificação é zero
     if _cfg.EM_CONTAINER:

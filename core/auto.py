@@ -155,11 +155,24 @@ def _bases_header(meta, colecoes, com_web: bool) -> str | None:
     return "Bases consultadas:\n" + "\n".join(linhas) if linhas else None
 
 
-def responde_auto(client, question, history, log=None) -> dict:
-    """Pipeline completo do modo Auto. Retorna {answer, found, decisao, consulta}."""
+def responde_auto(client, question, history, log=None,
+                  colecoes_permitidas=None) -> dict:
+    """Pipeline completo do modo Auto. Retorna {answer, found, decisao, consulta}.
+
+    `colecoes_permitidas`: escopo da config da administração (spec
+    consulta_consolidada.md) — quando informado, a decisão do roteador é
+    INTERSECTADA com ele (o auto é inalcançável pela consulta consolidada;
+    o parâmetro é defensivo para chamadas diretas/CLI)."""
     log = log or (lambda m, g="auto": None)
     meta = catalog.list_meta(client)
     decisao = _decide(question, history, meta, log)
+    if colecoes_permitidas is not None:
+        antes = list(decisao["colecoes"] or [])
+        decisao["colecoes"] = [c for c in decisao["colecoes"] or []
+                               if c in colecoes_permitidas]
+        if antes != decisao["colecoes"]:
+            log(f"🎯 escopo da configuração vence: {antes} → "
+                f"{decisao['colecoes']}", "auto")
     print(f"🤖 Auto: {decisao['acao']} {decisao['colecoes']} — {decisao['motivo']}")
 
     if decisao["acao"] == "livre":

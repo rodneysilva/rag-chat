@@ -74,25 +74,24 @@ def hx_conversa_copy(request: Request):
 
 
 @router.post("/hx/chat")
-def hx_chat(request: Request, question: str = Form(""), mode: str = Form("hibrido"),
+def hx_chat(request: Request, question: str = Form(""), mode: str = Form(""),
             model: str = Form(""),
             mcps: list[str] = Form(default=[]),
             colecoes: list[str] = Form(default=[])):
     """Inicia o job do chat e devolve o partial INLINE (bolha do usuário +
-    tail de polling com o log ao vivo)."""
+    tail de polling com o log ao vivo).
+
+    🎯 CONSULTA CONSOLIDADA (spec core/specs/consulta_consolidada.md): os
+    campos mode/model/mcps/colecoes ficam no formulário por COMPATIBILIDADE
+    (HTML de navegador antigo em cache) e são IGNORADOS — modo/escopo/MCPs
+    nascem da config da administração, resolvida lá dentro no
+    _processar_query."""
     question = (question or "").strip()
     if not question:
         return TEMPLATES.TemplateResponse(request, "_chatjob.html",
                                           {"request": request, "job": "-",
                                            "linhas": [], "running": False,
                                            "rodape": "pergunta vazia"}, status_code=400)
-    # so troca quando o pedido e um ALIAS conhecido (REGISTRO); arquivos
-    # crus (stem) da estacao travam a troca na VPS — ignora silenciosamente.
-    # EXTERNO ("glm:glm-4.6") NÃO é alias: passa INTEIRO (o override da
-    # execução cuida do resto; aqui só não podemos descartar)
-    _model_raw = (model or "").strip()
-    _alias_ok = _model_raw in modelos.REGISTRO if _model_raw else False
-    model = _model_raw if (_alias_ok or ":" in _model_raw) else None
     # HISTÓRICO da sessão salva (fonte da verdade no servidor): a webui
     # HTMX não envia history — sem isto a LLM respondia SEM contexto
     # ("o que se perdeu": o React antigo mandava). 📦 ENXUTO (pedido:
@@ -113,20 +112,15 @@ def hx_chat(request: Request, question: str = Form(""), mode: str = Form("hibrid
                 _hist.append({"role": "user", "content": m["content"][:400]})
     except Exception:
         pass
-    # COLEÇÃO SELECIONADA = CONTEXTO RAG (pedido do dono): no modo LIVRE a
-    # busca nunca roda — o usuário marca coleções e elas não entravam no
-    # contexto (a armadilha). Promovido para HÍBRIDO: a base entra como
-    # referência primária e o conhecimento do modelo complementa.
-    if colecoes and mode == "livre":
-        mode = "hibrido"
     # ⚠️ SID CRIADO ANTES DO CORPO: na 1ª mensagem o cookie ainda NÃO
     # existia no request → o job rodava com sessao=None → o CACHE gravava
     # a resposta com owner VAZIO e a 2ª pergunta (com cookie, owner certo)
     # NUNCA batia o escopo (bug real do "cache não funciona no chat").
     _stub_sid = JSONResponse({})
     sid = _sessao_id(request, _stub_sid, criar=True)
-    corpo = QueryIn(question=question, mode=mode, model=model, mcps=mcps or [],
-                    collections=colecoes or [], history=_hist or None,
+    # 🎯 nada de mode/model/mcps/colecoes: a config da administração resolve
+    # dentro do _processar_query (defaults do QueryIn são sobrescritos lá)
+    corpo = QueryIn(question=question, history=_hist or None,
                     sessao=sid, job=True)
     try:
         r = query(corpo)
@@ -148,8 +142,11 @@ def hx_chat(request: Request, question: str = Form(""), mode: str = Form("hibrid
              "erro": f"o serviço do chat não respondeu ({str(e)[:160]}) — "
                      "aguarde alguns segundos e tente de novo"})
     # grava a pergunta na sessão (a resposta entra quando o job conclui) —
-    # sid/resp_stub já criados ANTES do corpo (owner correto no cache)
+    # sid/resp_stub já criados ANTES do corpo (owner correto no cache).
+    # 🎯 modo/colecoes salvos = os RESOLVIDOS da config da administração
+    # (o composer não escolhe mais; o título semântico lê este escopo)
     resp_stub = _stub_sid
+    _cons = consulta.resumo()
     try:
         anterior = sessions.get_session(sid) or {}
         bruto = anterior.get("raw") or []
@@ -159,7 +156,8 @@ def hx_chat(request: Request, question: str = Form(""), mode: str = Form("hibrid
         # antes da caixa limpar)
         bruto.append({"role": "user", "content": question})
         sessions.save_session(bruto, sid=sid, owner=anterior.get("owner", ""),
-                              titulo="", modo=mode, colecoes=colecoes,
+                              titulo="", modo=_cons["modo"] or "hibrido",
+                              colecoes=_cons["colecoes"] or [],
                               aprovacoes=anterior.get("aprovacoes", {}),
                               raw=bruto,
                               job_ativo={"kind": "chat", "job": r["job"]})
@@ -522,10 +520,6 @@ def query(body: QueryIn):
 
         def rodar():
             _n_hist = len(corpo.history or [])
-            # modo ORIGINAL pedido no composer (o roteador pode escalar para
-            # híbrido DENTRO do _processar_query — o pedido foi "rag", é isto
-            # que decide se o modelo aparece no header)
-            _modo_pedido = corpo.mode
             _query_log(jid, f"📜 histórico da sessão: {_n_hist} msg(s) anteriores"
                           + (" (contexto ATIVO)" if corpo.history else " (SEM contexto)"),
                        "mensagem")
@@ -596,13 +590,14 @@ def query(body: QueryIn):
                                     f"🔺{t['saida']} gerados · {t['chamadas']} chamada(s){_vel}",
                                "tokens")
                 # 🙈 MODELO SÓ QUANDO A LLM FOI CONSULTADA (pedido do dono):
-                # zero chamadas (cache/resposta direta da base) OU pedido no
-                # modo rag ("só a base" — mesmo escalado a híbrido pelo
-                # roteador) → o header da mensagem não cita modelo
+                # zero chamadas (cache/resposta direta da base) OU consulta
+                # no modo rag → o header da mensagem não cita modelo. 🎯 o
+                # modo lido é o RESOLVIDO (res["mode"] — pós-consolidação o
+                # payload não decide mais nada)
                 try:
                     if isinstance(res, dict) and res.get("model"):
                         _ch = (res.get("tokens") or {}).get("chamadas") or 0
-                        if _ch == 0 or _modo_pedido == "rag":
+                        if _ch == 0 or res.get("mode") == "rag":
                             res["model"] = None
                 except Exception:
                     pass
