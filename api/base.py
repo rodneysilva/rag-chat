@@ -405,6 +405,21 @@ def _usuario_ok(request: Request) -> bool:
 
 async def _auth_middleware(request: Request, call_next):
     caminho = request.url.path
+    # 🌐 API COMPATÍVEL OPENAI (/v1/* — spec consulta_consolidada.md, regra
+    # 8): mesmo Bearer do login, mas o erro é 401 JSON NO SHAPE OPENAI
+    # ({"error":{message,type,code}}) — NUNCA redirect /entrar, clientes
+    # SDK não seguem Location
+    if caminho.startswith("/v1/"):
+        try:
+            _usuario(request)
+        except HTTPException:
+            return JSONResponse(
+                status_code=401,
+                content={"error": {"message": "Missing bearer or invalid "
+                                              "token — same token as the "
+                                              "web login",
+                                   "type": "invalid_request_error",
+                                   "code": "invalid_api_key"}})
     if caminho.startswith("/api/") and caminho not in _ROTAS_PUBLICAS \
             and not caminho.startswith("/api/auth/"):
         try:
@@ -412,7 +427,7 @@ async def _auth_middleware(request: Request, call_next):
         except HTTPException:
             return JSONResponse(status_code=401,
                                 content={"detail": "faça login para usar o sistema"})
-    if not caminho.startswith(("/api/", "/static", "/sandbox/")) and caminho != "/entrar":
+    if not caminho.startswith(("/api/", "/v1/", "/static", "/sandbox/")) and caminho != "/entrar":
         # páginas e /hx/*: sem login → volta para o /entrar (HTMX segue o
         # redirect). /sandbox/* TEM AUTH PRÓPRIO (token HMAC curto do
         # subdomínio sandbox.disroy.org — cookie não atravessa subdomínios)

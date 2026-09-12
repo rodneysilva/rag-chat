@@ -69,12 +69,13 @@ app.on_event("startup")(_subir_executor)
 # revalida o caso slug). Não reordenar sem ler docs/arquitetura.md.
 from api.routers import (  # noqa: E402
     agentico, auth as auth_router, biblioteca, chat, jobs as jobs_router,
-    paginas, provedores, sandbox, sistema, telemetria,
+    openai_compat, paginas, provedores, sandbox, sistema, telemetria,
 )
 
 _ORDEM_INCLUDE = [jobs_router,  # status das famílias: paths literais únicos
                   auth_router, chat, paginas, sandbox, biblioteca, sistema,
-                  telemetria, provedores, agentico]
+                  telemetria, provedores, agentico,
+                  openai_compat]  # /v1/* — sem colisão com os paths acima
 
 for _r in _ORDEM_INCLUDE:
     app.include_router(_r.router)
