@@ -35,3 +35,4 @@ conversa; o container do chat nem acorda na estação.
 "\n" na linha vira quebra de texto.)
 
 MSG_SEM_SINAL: ⚠️ **Nada na base responde a esta pergunta** — o reranker analisou os fragmentos recuperados e nenhum tem relação real com o pedido (a base não parece conter este assunto).\n\nO material abaixo é apenas o mais próximo que a busca encontrou, por referência:\n\n
+MSG_RECUSA_CRIAR: Não possuo dados confiáveis o suficiente nos documentos para responder.\n\n💡 Seu pedido parece ser de **criação** (página, código, API…): isto é trabalho do modo **híbrido** — a base orienta o estilo e o modelo escreve. A LLM está desligada na configuração: peça ao administrador para ligá-la em **Sistema → 🎯 Consulta** (spec consulta_consolidada.md).
