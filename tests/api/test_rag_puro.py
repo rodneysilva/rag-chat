@@ -268,6 +268,27 @@ def test_resposta_direta_em_ingles_sai_traduzida(cenario, monkeypatch):
     assert enviadas and "Create a web project" in enviadas[0]  # foi ao motor
 
 
+def test_resposta_direta_traduzida_tem_cercas_alinhadas(cenario, monkeypatch):
+    """O opus-mt MOVE espaços para dentro das cercas ("select **New**" voltou
+    "selecione **Novo **>" ao vivo 13/09 — espaço interno MATA o negrito no
+    CommonMark e o ** aparece cru). A resposta direta sai com as cercas
+    alinhadas de novo."""
+    from core import tradutor
+    base, rag = cenario
+    monkeypatch.setattr(base.config, "SCORE_DIRETO", 0.5)
+    monkeypatch.setattr(tradutor, "traduzir_lote", lambda ts, **kw: [
+        "No menu **Arquivo **, selecione **Novo **> **Projeto** ."])
+    doc = _doc("## Create a web project\n- From the File menu, select "
+               "**New** >**Project** .")
+    monkeypatch.setattr(rag, "search",
+                        lambda *a, **kw: ([(doc, 0.67, "c")], {}))
+    r = _processar_query(QueryIn(question="Como desenvolvo uma api em dotnet?",
+                                 mode="rag", collections=["c"]))
+    assert "**Novo** > **Projeto**" in r["answer"]
+    assert "**Novo **" not in r["answer"]     # cerca interna: nunca espaço
+    assert "**Arquivo **" not in r["answer"]
+
+
 def test_resposta_direta_portugues_nao_va_ao_tradutor(cenario, monkeypatch):
     """Fragmento já em PT (ou tradutor indisponível) entra como está — sem
     marcador, sem chamada ao motor."""

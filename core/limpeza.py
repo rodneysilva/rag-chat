@@ -241,6 +241,66 @@ def reparar_enfase(texto: str) -> str:
                    for i, p in enumerate(partes))
 
 
+# ---------- ênfase desalinhaada pela TRADUÇÃO -------------------------------
+# O opus-mt traduz o texto COM as cercas de ênfase e MOVE os espaços para
+# dentro delas ("select **New**" voltava "selecione **Novo **" — espaço na
+# borda interna MATA o negrito no CommonMark, o ** aparece cru na resposta;
+# visto ao vivo 13/09 na resposta direta do tutorial MS Learn).
+# itálico REAL: `*` que não faz par de negrito (lookbehind/lookahead), abre
+# em não-espaço e fecha em não-espaço — "*3*" de multiplicação e "**" de
+# negrito não casam
+_RE_ITALICO = re.compile(r"(?<!\*)\*(?!\s)([^*\n]*[^\s*])\*(?!\*)")
+
+_RE_LETRA = re.compile(r"[a-zA-Zà-úÀ-Ú]")
+
+
+def _espacar_italico(prosa: str) -> str:
+    """Borda EXTERNA do itálico com palavra dentro (mesma regra do negrito;
+    "*3*" numérico é multiplicação, intocado)."""
+    def _fix(m: re.Match) -> str:
+        if not _RE_LETRA.search(m.group(1)):
+            return m.group(0)
+        antes = prosa[m.start() - 1] if m.start() else ""
+        depois = prosa[m.end()] if m.end() < len(prosa) else ""
+        esp_antes = (antes and not antes.isspace()
+                     and antes not in _ANEXA_ANTES)
+        esp_depois = (depois and not depois.isspace()
+                      and depois not in _ANEXA_DEPOIS)
+        return (" " if esp_antes else "") + f"*{m.group(1)}*" \
+            + (" " if esp_depois else "")
+    return _RE_ITALICO.sub(_fix, prosa)
+
+
+def _apertar_cercas(prosa: str) -> str:
+    """Bordas internas coladas de novo: "**Novo **" → "**Novo**" (negrito e
+    itálico com palavra dentro — "2*3*4" numérico não é ênfase, fica como
+    está). Só mexe na cerca QUE VEIO DESALINHADA (espaço grudado na borda
+    interna): o asterisco literal no meio da prosa não vira par."""
+    prosa = re.sub(r"\*\*([^*\n]*?)\s+\*\*",
+                   lambda m: f"**{m.group(1).strip()}**", prosa)
+    return re.sub(r"\*(\S+?)\s+\*",
+                  lambda m: ("*" + m.group(1).strip() + "*"
+                             if _RE_LETRA.search(m.group(1))
+                             else m.group(0)), prosa)
+
+
+def _enfase_ok(prosa: str) -> str:
+    return _espacar_italico(reparar_enfase(_apertar_cercas(prosa)))
+
+
+def reparar_enfase_traduzida(texto: str) -> str:
+    """Normaliza a ênfase que voltou do TRADUTOR neural: aperta as bordas
+    internas ("**Novo **" → "**Novo**") e re-espaça as externas
+    (reparar_enfase). Fence-aware: código é verbatim, intocado."""
+    if not texto or ("*" not in texto):
+        return texto
+    partes = _RE_CERCA.split(texto)
+    if len(partes) == 1:
+        return _enfase_ok(texto)
+    return "".join(p if i % 2 else _enfase_ok(p)
+                   for i, p in enumerate(partes))
+
+
 # ---------- HTML cru → texto legível (resposta direta da base) ----------
 
 # marcadores de PÁGIna inteira — usado junto com DENSIDADE de tags (um

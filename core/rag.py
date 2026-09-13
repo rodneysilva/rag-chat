@@ -570,7 +570,12 @@ def traduzir_resposta_direta(pergunta: str, texto: str) -> str:
         lote = None
     if not lote or not lote[0]:
         return texto                             # indisponível: original
-    return (lote[0] + " "
+    # o motor neural MOVE os espaços de dentro das cercas ("**New**" voltou
+    # "**Novo **" — espaço interno mata o negrito no CommonMark; visto ao
+    # vivo 13/09). Código verbatim não chega aqui (retornou acima).
+    from . import limpeza as _limpeza
+    traduzido = _limpeza.reparar_enfase_traduzida(lote[0])
+    return (traduzido + " "
             + palavra("MARCADOR_TRADUZIDO", "*(traduzido)*")).strip()
 _STOP_DIGEST = frozenset(
     "a o as os um uma uns umas de do da das dos e em no na nos nas por para "
@@ -749,7 +754,10 @@ def digest_rag(question, docs, limite: int = 4) -> str:
             lote = []
         for (it, campo), novo in zip(pendentes, lote):
             if novo:
-                it[campo] = novo
+                # o motor neural move espaços para dentro das cercas de
+                # ênfase ("**Novo **" não renderiza) — normaliza (código
+                # verbatim nunca entra nesta fila)
+                it[campo] = _limpeza.reparar_enfase_traduzida(novo)
                 it["traduzido"] = True
     # 2ª passada: cabeçalhos numerados + separadores (o marcador de tradução
     # vive na spec core/specs/traducao.md — palavras ao usuário fora do código)

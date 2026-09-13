@@ -8,7 +8,8 @@ blinda o digest); o `hf.dados` NOVO grava só o conteúdo.
 """
 from types import SimpleNamespace
 
-from core.limpeza import limpar_dump_hf, reparar_enfase
+from core.limpeza import (limpar_dump_hf, reparar_enfase,
+                          reparar_enfase_traduzida)
 
 _DUMP = (
     "# codeparrot/github-code · default/train (linhas 401–402)\n"
@@ -91,6 +92,35 @@ def test_reparar_enfase_sem_negrito_volta_intacto():
     assert reparar_enfase(prosa) == prosa
     ja_ok = "selecione **Novo** > **Projeto**"
     assert reparar_enfase(ja_ok) == ja_ok   # já espaçado: não duplica espaço
+
+
+# ---------- ênfase desalinhada pela TRADUÇÃO (opus-mt move os espaços) ------
+# Caso real ao vivo 13/09: "select **New** >" voltou do tradutor como
+# "selecione **Novo **>" — espaço na borda INTERNA mata o negrito no
+# CommonMark (o ** aparece cru na resposta).
+
+def test_reparar_enfase_traduzida_aperta_borda_interna():
+    fixo = reparar_enfase_traduzida(
+        "No menu **File **, selecione **Novo **> **Project** .")
+    assert "**File**," in fixo
+    assert "**Novo** > **Project**" in fixo
+    assert "**Novo **" not in fixo       # cerca interna nunca com espaço
+
+
+def test_reparar_enfase_traduzida_italico_e_borda_externa():
+    fixo = reparar_enfase_traduzida(
+        "nomeie o projeto*EndoApi* e confirme o termo*importante*.")
+    assert "projeto *EndoApi* e" in fixo        # borda externa espaçada
+    assert "termo *importante*." in fixo        # pontuação final anexa
+    assert "projeto*EndoApi*" not in fixo
+
+
+def test_reparar_enfase_traduzida_nao_confunde_multiplicacao():
+    """Asterisco literal de multiplicação não vira ênfase — e cerca de
+    código continua verbatim."""
+    orig = "calcule a * b e * c\n\n```python\nx = a * b * c\n```"
+    fixo = reparar_enfase_traduzida(orig)
+    assert fixo == orig                   # nada de ênfase aqui: idêntico
 
 
 def test_higienizar_colecao_reembeda_o_dump_no_mesmo_id(monkeypatch):
