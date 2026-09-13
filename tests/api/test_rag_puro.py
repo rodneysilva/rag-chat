@@ -470,3 +470,75 @@ def test_digest_nao_exibe_dump_de_metadados_hf(monkeypatch):
     for sujo in ("repo_name:", "content_sha256:", " | "):
         assert sujo not in out
     assert "WebApplication.CreateBuilder" in out   # conteúdo preservado
+
+
+def test_digest_trecho_nunca_corta_cerca():
+    """Regra 8 (iv): o digest recorta o parágrafo mais parecido mas NUNCA
+    dentro de cerca — o bloco ``` entra INTEIRO (linha em branco interna
+    incluída: era o ponto de corte do split antigo em "\\n\\n"). Cerca
+    GIGANTE escolhida sai verbatim: ela É o material."""
+    from core import rag
+    cerca = ('```python\ndef servidor():\n'
+             '    app = Servidor(websocket=True)\n'
+             '\n'
+             '    @app.rota("/status")\n'
+             '    def status():\n'
+             '        return {"ok": True}\n'
+             '```')
+    txt = ("Introdução sobre servidores Python e criação de serviços web "
+           "que contextualiza o material. " * 6
+           + "\n\n" + cerca + "\n\n"
+           + "Encerramento sobre implantação e monitoramento do serviço. " * 6)
+    # o pedido casa com o CÓDIGO (websocket/rota), não com a prosa
+    out = rag._digest_trecho(txt, rag._digest_termos("exemplo websocket rota"),
+                             pergunta_pt=False, max_chars=120)
+    assert out.count("```") == 2              # cerca FECHADA, não picada
+    assert "websocket=True" in out            # conteúdo íntegro…
+    assert '\n\n    @app.rota' in out         # …linha em branco interna viva
+    # cerca gigante sozinha (> 2×lim): verbatim de ponta a ponta
+    gigante = "```go\n" + "linhaDeCodigoUm()\nlinhaDeCodigoDois()\n\n" * 40 + "```"
+    txt2 = "Prosa inicial sobre outro assunto, sem relação com o código. " * 8 \
+        + "\n\n" + gigante
+    out2 = rag._digest_trecho(txt2, {"linhadecodigoum"}, pergunta_pt=False,
+                              max_chars=200)
+    assert gigante in out2
+
+
+def test_digest_respeita_digest_max_com_corte_em_borda(monkeypatch):
+    """Regra 2: o trecho cresce até `DIGEST_MAX` (~1600 — seção completa da
+    base autoral CABE inteira); passou do limite, PROSA corta em BORDA DE
+    PALAVRA com reticências — nunca no meio de uma palavra."""
+    from core import config, rag
+    parags = "\n\n".join(
+        f"Parágrafo {i} sobre ingredientes regionais da culinária paraense "
+        f"com dendê, jambu e tucupi em preparações variadas. " * 3
+        for i in range(1, 6))
+    monkeypatch.setattr(config, "DIGEST_MAX", 300)
+    out = rag._digest_trecho(parags, {"tucupi"}, pergunta_pt=True)
+    assert len(out) <= 302                     # ~lim + reticências
+    assert out.endswith("…")
+    assert out.rstrip("…") in parags           # corte em palavra, não dentro
+    # seção que CABE no limite: sai COMPLETA (sem cortes — pedido do dono)
+    secao = "\n\n".join(f"Passo {i} do preparo do vatapá com dendê e jambu, "
+                        f"seguindo a tradição paraense." for i in range(1, 4))
+    monkeypatch.setattr(config, "DIGEST_MAX", 1600)
+    assert rag._digest_trecho(secao, {"vatapá"}, pergunta_pt=True) == secao
+
+
+def test_caminho_do_tradutor_mantem_teto_900(monkeypatch):
+    """O motor opus-mt tem teto de ~350 tokens por item (spec traducao.md):
+    resposta direta LONGA em inglês é recortada em ~900 chars ANTES de ir
+    ao tradutor; a curta (≤1100) viaja inteira."""
+    from core import rag, tradutor
+    enviadas = []
+    monkeypatch.setattr(tradutor, "traduzir_lote",
+                        lambda ts, **kw: enviadas.extend(ts) or list(ts))
+    longo = ("The quick brown fox explains every step of the traditional "
+             "recipe with details about ingredients and preparation. " * 25)
+    assert len(longo) > 1100
+    rag.traduzir_resposta_direta("como é o vatapá?", longo)
+    assert 800 <= len(enviadas[0]) <= 1000     # recorte ~900, não truncado
+    enviadas.clear()
+    curto = "Vatapá is a traditional dish from Pará with dendê palm oil."
+    rag.traduzir_resposta_direta("como é o vatapá?", curto)
+    assert enviadas == [curto]                 # ≤1100: vai inteira

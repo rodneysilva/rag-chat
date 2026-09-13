@@ -562,7 +562,7 @@ def traduzir_resposta_direta(pergunta: str, texto: str) -> str:
     if _eh_portugues(texto):
         return texto
     trecho = texto if len(texto) <= 1100 else _digest_trecho(
-        texto, _digest_termos(pergunta), pergunta_pt=True)
+        texto, _digest_termos(pergunta), pergunta_pt=True, max_chars=900)
     from .tradutor import palavra, traduzir_lote
     try:
         lote = traduzir_lote([trecho])
@@ -610,16 +610,43 @@ def _eh_portugues(texto: str) -> bool:
     return pt > en
 
 
+def _paragrafos(txt: str) -> list[str]:
+    """Parágrafos para o digest, FENCE-AWARE: cerca FECHADA é um parágrafo
+    atômico (linhas em branco internas NÃO quebram o bloco — caso real: o
+    split em "\n\n" picava o código em "parágrafos" e o recorte do digest
+    cortava dentro da cerca). Prosa quebra em parágrafo como sempre."""
+    from .limpeza import separar_prosa_cercas
+    out: list[str] = []
+    for eh_cerca, b in separar_prosa_cercas(txt):
+        if eh_cerca:
+            out.append(b.strip("\n"))
+        else:
+            out.extend(q.strip() for q in re.split(r"\n\s*\n", b) if q.strip())
+    return out
+
+
 def _digest_trecho(txt: str, termos: set[str], pergunta_pt: bool,
-                   max_chars: int = 900) -> str:
+                   max_chars: int | None = None) -> str:
     """Recorta o PARÁGRAFO mais parecido com a pergunta (± vizinhos enquanto
     cabe). Sem LLM, "mais certeiro" = sobreposição de termos + preferência
-    pelo idioma da pergunta; trecho já curto sai inteiro."""
-    if len(txt) <= max_chars:
+    pelo idioma da pergunta; trecho já curto sai inteiro.
+
+    FENCE-AWARE (regra 8 da spec rag_puro.md): cerca de código entra INTEIRA
+    no trecho mesmo passando do limite (teto 2×lim — acima disso solta os
+    parágrafos vizinhos; cerca gigante sozinha sai verbatim, ela É o
+    material); corte de prosa só em borda de palavra, nunca dentro de
+    cerca. Limite default: config.DIGEST_MAX (~1600 — seção completa da
+    base autoral); o tradutor chama com 900 explícito (teto ~350 tokens do
+    opus-mt, spec traducao.md)."""
+    lim = int(max_chars or config.DIGEST_MAX)
+    if len(txt) <= lim:
         return txt
-    parags = [p.strip() for p in re.split(r"\n\s*\n", txt) if p.strip()]
+    parags = _paragrafos(txt)
     if not parags:
-        return txt[:max_chars].rsplit(" ", 1)[0] + "…"
+        corte = txt[:lim]
+        if corte.count("```") % 2:     # emergência caiu dentro de cerca
+            corte = corte[:corte.rfind("```")]
+        return corte.rstrip().rsplit(" ", 1)[0] + "…"
     melhor, melhor_pontos = 0, -1.0
     for n, p in enumerate(parags):
         pontos = float(len(_digest_termos(p) & termos))
@@ -635,11 +662,20 @@ def _digest_trecho(txt: str, termos: set[str], pergunta_pt: bool,
     if melhor_pontos <= 0:
         melhor = 0                    # nada casou: começa do topo do trecho
     ini, fim = melhor, melhor + 1
-    while ini > 0 and len("\n\n".join(parags[ini - 1:fim])) <= max_chars * 0.6:
+    while ini > 0 and len("\n\n".join(parags[ini - 1:fim])) <= lim * 0.6:
         ini -= 1                      # um pouco de contexto ANTERIOR cabe
+    # cerca entra INTEIRA mesmo ultrapassando o limite — teto 2×lim: acima
+    # disso, solta o CONTEXTO ao redor (cauda primeiro, cabeça depois),
+    # nunca o parágrafo ESCOLHIDO (a cerca costuma ser ela mesma)
+    while fim > melhor + 1 and len("\n\n".join(parags[ini:fim])) > 2 * lim:
+        fim -= 1
+    while ini < melhor and len("\n\n".join(parags[ini:fim])) > 2 * lim:
+        ini += 1
     out = "\n\n".join(parags[ini:fim]).strip()
-    if len(out) > max_chars:
-        out = out[:max_chars].rsplit(" ", 1)[0] + "…"
+    if len(out) > 2 * lim and out.lstrip().startswith("```"):
+        return out                    # cerca gigante: verbatim, ela é o material
+    if len(out) > lim and "```" not in out:
+        out = out[:lim].rsplit(" ", 1)[0] + "…"   # só PROSA corta em palavra
     return ("…" if ini > 0 else "") + out + ("…" if fim < len(parags) else "")
 
 

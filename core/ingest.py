@@ -16,15 +16,15 @@ from pathlib import Path
 
 import httpx
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain_text_splitters import (
-    MarkdownHeaderTextSplitter,
-    RecursiveCharacterTextSplitter,
-)
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 
 from . import catalog, config, consolida, contadores, rag
-from .limpeza import e_lixo, e_lixo_documento, limpar_texto, score_chunk, titulo_de, url_de
+from .limpeza import (descricao_de, e_lixo, e_lixo_documento, limpar_texto,
+                      score_chunk, separar_prosa_cercas, tirar_cabecalho_seed,
+                      titulo_de, url_de)
 
 
 def _slug_pasta(nome: str) -> str:
@@ -98,11 +98,17 @@ def _preparar_docs(docs, log=None):
                 limpos.append(d)
             continue
         url = url_de(d.page_content)
-        d.page_content = limpar_texto(d.page_content)
+        descricao = descricao_de(d.page_content)
+        # linhas de procedência ('> fonte/redação/descrição') saem do CORPO:
+        # url/descrição já estão na metadata, sobrando viram ruído no
+        # embedding do primeiro chunk de todo arquivo de seed
+        d.page_content = limpar_texto(tirar_cabecalho_seed(d.page_content))
         d.metadata["arquivo"] = Path(origem).name
         d.metadata["titulo"] = titulo_de(d.page_content, Path(origem).stem)
         if url:
             d.metadata["url"] = url
+        if descricao:
+            d.metadata["descricao"] = descricao
         if d.page_content and not e_lixo_documento(d.page_content):
             limpos.append(d)
     return limpos
@@ -146,6 +152,77 @@ def _analisar_codigo(docs, log):
 
 
 _CABECALHOS_MD = [("#", "h1"), ("##", "h2"), ("###", "h3")]
+_RE_LINHA_CABECALHO = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.M)
+
+
+def _secoes_md(texto: str) -> list[Document]:
+    """Divide o markdown por cabeçalhos h1/h2/h3 — FENCE-AWARE por
+    construção: as linhas de cabeçalho só casam na PROSA (o "# comentário"
+    dentro de cerca é código) e o conteúdo volta BYTE A BYTE, com a
+    hierarquia cumulativa h1>h2>h3 na metadata como o splitter da langchain
+    fazia. Motivo da troca: o MarkdownHeaderTextSplitter COLAPSAVA
+    tabs/indentação do código das seções (bug real de verbatim — regra 8
+    da spec rag_puro.md)."""
+    from .limpeza import _RE_CERCA
+    partes = _RE_CERCA.split(texto)          # pares=prosa, ímpares=cerca
+    cortes: list[tuple[int, dict]] = [(0, {})]
+    offset = 0
+    for i, parte in enumerate(partes):
+        if i % 2 == 0:                       # prosa: caça cabeçalhos
+            for m in _RE_LINHA_CABECALHO.finditer(parte):
+                nivel = len(m.group(1))
+                if nivel > 3:
+                    continue                 # h4+ não é ponto de corte
+                cortes.append((offset + m.start(),
+                               {f"h{nivel}": m.group(2).strip()}))
+        offset += len(parte)
+    secoes: list[Document] = []
+    estado = {"h1": "", "h2": "", "h3": ""}
+    for k, (ini, meta) in enumerate(cortes):
+        if meta:
+            estado.update(meta)
+            if "h1" in meta:
+                estado["h2"] = estado["h3"] = ""
+            if "h2" in meta:
+                estado["h3"] = ""
+        fim = cortes[k + 1][0] if k + 1 < len(cortes) else len(texto)
+        conteudo = texto[ini:fim].strip("\n")
+        if conteudo.strip():
+            secoes.append(Document(
+                page_content=conteudo,
+                metadata={c: v for c, v in estado.items() if v}))
+    return secoes
+
+
+def _splitar_secao(texto: str, splitter) -> list[str]:
+    """Divide uma seção de markdown respeitando CERCAS DE CÓDIGO: bloco ```
+    é ATÔMICO — nunca picado entre chunks, mesmo maior que CHUNK_SIZE (o
+    BGE-M3 comporta; código verbatim é regra 3/8 da spec rag_puro.md). A
+    prosa segue no recursive splitter (com o overlap de sempre DENTRO de
+    cada trecho de prosa) e a montagem acumula unidades consecutivas
+    enquanto cabem. Sem overlap através de fronteira prosa↔cerca: a cerca
+    é autocontida e o cabeçalho contextual "[O que é · parte i/n]" ancora
+    o pedaço seguinte. (Caso real reproduzido: cerca de ~3000 chars com
+    linha em branco interna nascia CORTADA em dois chunks — o separador
+    "\n\n" do recursive casa dentro da cerca.)"""
+    unidades: list[str] = []
+    for eh_cerca, bloco in separar_prosa_cercas(texto):
+        if eh_cerca:
+            unidades.append(bloco.rstrip("\n"))        # cerca INTEIRA
+        elif bloco.strip():
+            unidades.extend(splitter.split_text(bloco))
+    pedacos, atual = [], ""
+    for u in unidades:
+        cand = (atual + "\n\n" + u) if atual else u
+        if len(cand) <= config.CHUNK_SIZE:
+            atual = cand
+        else:
+            if atual:
+                pedacos.append(atual)
+            atual = u            # unidade sozinha (cerca grande = chunk maior)
+    if atual.strip():
+        pedacos.append(atual)
+    return pedacos
 
 
 def _dividir(docs, log):
@@ -163,8 +240,6 @@ def _dividir(docs, log):
     descartados; se NADA sobrevive, a ingestão falha com o relatório de
     rejeições em vez de gravar base vazia.
     """
-    header_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=_CABECALHOS_MD, strip_headers=False)
     splitter = RecursiveCharacterTextSplitter(
         separators=["\n\n\n", "\n\n", "\n", ". ", "! ", "? ", "… ",
                     "; ", " ", ""],
@@ -184,7 +259,7 @@ def _dividir(docs, log):
         if (str(d.metadata.get("source", "")).lower().endswith((".md", ".mdx"))
                 and d.metadata.get("camada") != "codigo"):
             try:  # .md: 1ª passada por cabeçalhos — a seção fica inteira
-                secoes = header_splitter.split_text(d.page_content) or [d]
+                secoes = _secoes_md(d.page_content) or [d]
             except Exception:
                 secoes = [d]
         for sec in secoes:
@@ -192,7 +267,9 @@ def _dividir(docs, log):
                        if k in ("h1", "h2", "h3") and v}
             if headers:
                 herda = {**herda, "secao": " · ".join(headers.values())}
-            for c in splitter.split_documents([sec]):
+            for pedaco in _splitar_secao(sec.page_content, splitter):
+                c = Document(page_content=pedaco,
+                             metadata=dict(getattr(sec, "metadata", None) or {}))
                 c.metadata.update(herda)
                 pedacos.append(c)
 
@@ -265,7 +342,8 @@ def _dividir(docs, log):
     return mantidos
 
 
-def ingest_folder(folder, collection=None, rapido=False, log=None):
+def ingest_folder(folder, collection=None, rapido=False, log=None,
+                  area: str = ""):
     """Pipeline completo de ingestão: registra cada etapa e retorna o resultado.
 
     `log` opcional recebe cada linha de progresso (padrão: print) — a API
@@ -273,7 +351,9 @@ def ingest_folder(folder, collection=None, rapido=False, log=None):
     `collection` opcional define em qual coleção salvar (vazio: uma coleção
     nova a partir do nome da pasta). `rapido=True` (modo lote): pula a
     categorização por arquivo com a LLM — 1 chamada por arquivo é inviável
-    em bases grandes (ex.: documentação oficial inteira).
+    em bases grandes (ex.: documentação oficial inteira). `area` opcional
+    fixa o domínio dos chunks no modo lote (sem LLM p/ categorizar, a área
+    ficaria vazia — e o digest agrupa por área).
     """
     log = log or print
     if not collection:  # sem coleção informada: uma por pasta (slug do nome)
@@ -297,10 +377,10 @@ def ingest_folder(folder, collection=None, rapido=False, log=None):
         raise ValueError(f"Nenhum conteúdo útil encontrado em '{folder}' "
                          "(tudo foi descartado na limpeza ou não há "
                          ".txt/.md/.pdf/código)")
-    return ingest_docs(docs, collection, rapido, log)
+    return ingest_docs(docs, collection, rapido, log, area=area)
 
 
-def ingest_docs(docs, collection=None, rapido=False, log=None):
+def ingest_docs(docs, collection=None, rapido=False, log=None, area: str = ""):
     """Núcleo do pipeline a partir de documentos JÁ LIDOS E LIMPOS (por
     ingest_folder, pelo HuggingFace (core/hf) ou por qualquer fonte nova
     que produza Documents): categoriza → divide → embeda → grava → cataloga."""
@@ -317,12 +397,17 @@ def ingest_docs(docs, collection=None, rapido=False, log=None):
 
     # 2) Categorizar cada arquivo com a LLM (regras em specs/categorizacao.md)
     if rapido:
-        log(f"\n🏷️  Modo lote: sem LLM por arquivo — categoria fixa '{collection}'")
+        log(f"\n🏷️  Modo lote: sem LLM por arquivo — categoria fixa '{collection}'"
+            + (f", área '{area}'" if area else ""))
         for d in docs:
-            d.metadata.update({
-                "categoria": collection,
-                "descricao": f"documento: {Path(d.metadata.get('source', '?')).name}",
-            })
+            d.metadata["categoria"] = collection
+            # a linha '> descrição:' do seed autoral (se houver) GANHA do
+            # default genérico — o primeiro chunk do doc já nasce contextual
+            if not d.metadata.get("descricao"):
+                d.metadata["descricao"] = \
+                    f"documento: {Path(d.metadata.get('source', '?')).name}"
+            if area:
+                d.metadata["area"] = area
     else:
         log("\n🏷️  Categorização dos arquivos:")
 

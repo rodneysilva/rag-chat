@@ -82,6 +82,11 @@ FIELDS = {
                         "lista de nomes, links dominando) — padrão "
                         "comunidade RAG; motivo aparece no log/Revisão",
                         "float"),
+    "DIGEST_MAX": ("Aplicação",
+                   "Tamanho máx. do trecho de PROSA no digest rag (1600): "
+                   "seções completas da base autoral cabem sem elipse; "
+                   "cercas de código nunca são cortadas (regra 8 rag_puro)",
+                   "int"),
     "TEMPERATURE":    ("Aplicação", "Temperatura da LLM", "float"),
     "PROMPT_SYSTEM":  ("Aplicação", "Prompt de sistema do RAG", "text"),
     "RERANKER":       ("Aplicação",
@@ -161,6 +166,7 @@ TOP_K = 0
 SCORE_MIN = 0.0
 SCORE_DIRETO = 0.65   # ≥: o fragmento É a resposta (zero LLM) — real: 0.695
 SCORE_FRACO = 0.55    # <: fragmentos fracos não entram no prompt — real: 0.47/0.606
+DIGEST_MAX = 1600     # trecho de PROSA no digest (cerca de código nunca corta)
 TEMPERATURE = 0.0
 PROMPT_SYSTEM = ""
 # F1b/F2: flags de desenvolvimento/qualidade (MOCK_LLM valida a UI sem LLM;
@@ -229,7 +235,7 @@ def reload():
     """Relê o .env e atualiza os valores deste módulo."""
     global LLM_BASE_URL, LLM_MODEL, LLM_API_KEY, EMBED_BASE_URL, EMBED_MODEL, QDRANT_URL
     global COLLECTION, SERPER_API_KEY, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K
-    global SCORE_MIN, TEMPERATURE, PROMPT_SYSTEM, SCORE_CHUNK_MIN
+    global SCORE_MIN, TEMPERATURE, PROMPT_SYSTEM, SCORE_CHUNK_MIN, DIGEST_MAX
     global SCORE_DIRETO, SCORE_FRACO
     global AUTH_SECRET, AUTH_ADMIN_USER, AUTH_ADMIN_PASS
     global LLAMA_BIN
@@ -265,6 +271,9 @@ def reload():
     # GATE DE QUALIDADE da ingestão (padrão comunidade RAG): chunk com
     # score_chunk() abaixo disso é rejeitado (motivo no log/Revisão)
     SCORE_CHUNK_MIN = float(os.getenv("SCORE_CHUNK_MIN", "0.55"))
+    # trecho de PROSA exibido no digest rag (cerca de código entra INTEIRA,
+    # teto 2× — regra 8 da spec rag_puro.md; base autoral = seção completa)
+    DIGEST_MAX = int(os.getenv("DIGEST_MAX", "1600"))
     TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5"))
     PROMPT_SYSTEM = os.getenv(
         "PROMPT_SYSTEM",
@@ -305,6 +314,7 @@ def as_dict():
         "SCORE_DIRETO": SCORE_DIRETO,
         "SCORE_FRACO": SCORE_FRACO,
         "SCORE_CHUNK_MIN": SCORE_CHUNK_MIN,
+        "DIGEST_MAX": DIGEST_MAX,
         "TEMPERATURE": TEMPERATURE,
         "PROMPT_SYSTEM": PROMPT_SYSTEM,
         "RERANKER": int(RERANKER),

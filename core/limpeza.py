@@ -123,18 +123,43 @@ def _preenchimento(t: str) -> str:
     return t.strip()
 
 
-def limpar_texto(texto: str) -> str:
-    """Pipeline completo: normaliza, reconstroi frases, remove marcações de
-    web/wiki e linhas sem conteúdo. Idempotente (limpar 2× = limpar 1×)."""
-    if not texto:
-        return ""
-    t = _normaliza(texto)
+def _limpar_prosa(t: str) -> str:
+    """Pipeline de limpeza da PROSA: normaliza, reconstroi frases, remove
+    marcações de web/wiki e linhas sem conteúdo."""
+    t = _normaliza(t)
     t = _juntar_linhas(t)
     t = _remover_tabelas_inuteis(t)
     t = _remover_marcacoes(t)
     t = _juntar_linhas(t)                 # citações removidas requebram frases
     t = _remover_linhas_fracas(t)
     return _preenchimento(t)
+
+
+def limpar_texto(texto: str) -> str:
+    """Pipeline completo, FENCE-AWARE: bloco de código ``` fechado é VERBATIM
+    — indentação, quebras e linhas de símbolos (`}`, `)`) ficam; só espaços
+    exóticos/CR são normalizados. A limpeza de prosa roda no texto ao redor.
+
+    Sem cercas = caminho de sempre (saída idêntica à histórica — bases
+    não-dev não mudam). Idempotente (limpar 2× = limpar 1×). Caso real: o
+    pipeline antigo EMENDAVA linhas de código cuja anterior não terminava
+    em pontuação, colapsava indentação ≥2 espaços e DELETAVA o fechamento
+    da cerca — o ".md quebrado" que chegava ao digest (regra 3/8 da spec
+    rag_puro.md: código é verbatim de ponta a ponta)."""
+    if not texto:
+        return ""
+    blocos = separar_prosa_cercas(texto)
+    if len(blocos) <= 1 and not blocos[0][0]:
+        return _limpar_prosa(texto)          # sem cerca fechada: prosa pura
+    saida = []
+    for eh_cerca, bloco in blocos:
+        if eh_cerca:
+            saida.append(_normaliza(bloco).replace("\r\n", "\n"))
+        else:
+            limpa = _limpar_prosa(bloco)
+            if limpa.strip():
+                saida.append(limpa)
+    return "\n\n".join(s.strip("\n") for s in saida if s.strip("\n"))
 
 
 # ---------- dump de linhas HF → conteúdo (fim do "campo: v | campo: v | …") ----
@@ -206,6 +231,16 @@ def limpar_dump_hf(texto: str) -> str:
 # o ** pode ser operador de exponenciação e o código é VERBATIM.
 _RE_CERCA = re.compile(r"(```[\w+\-#.]*(?:[ \t]*\r?\n).*?```)", re.S)
 _RE_NEGRITO = re.compile(r"\*\*([^*\n]+?)\*\*")
+
+
+def separar_prosa_cercas(texto: str) -> list[tuple[bool, str]]:
+    """[(eh_cerca, bloco)] na ordem do texto — cerca FECHADA de código é um
+    bloco atômico (split COM grupo de captura: índice par = prosa, ímpar =
+    cerca). Alicerce da garantia verbatim (regra 8 da spec rag_puro.md):
+    limpeza, gates, split e digest consomem isto para nunca tocar em código.
+    Cerca NÃO fechada não casa (vira prosa — comportamento histórico)."""
+    partes = _RE_CERCA.split(texto or "")
+    return [(bool(i % 2), p) for i, p in enumerate(partes) if p]
 
 # pontuação que ACOLHE o negrito (fica colada de propósito): "(**x**)" e
 # "**fim**." são tipografia natural — o espaço entra nos OUTROS vizinhos
@@ -389,12 +424,32 @@ def _remover_tabelas_inuteis(t: str) -> str:
     return "\n".join(saida)
 
 
+def _so_prosa(texto: str) -> str:
+    """Só os blocos de PROSA (cercas fora) — os gates de qualidade pontuam
+    isto: pipes e símbolos DE CÓDIGO não são tabela/página (regra 8)."""
+    return "\n\n".join(b for eh, b in separar_prosa_cercas(texto) if not eh)
+
+
+def _tem_codigo(texto: str) -> bool:
+    """Existe cerca com CÓDIGO de verdade — conteúdo (sem a ``` e sem
+    espaços) com ≥ 60 chars, alinhado ao mínimo da camada código na
+    ingestão. Cerca real é CONTEÚDO, não ruído de página."""
+    return any(eh and len(re.sub(r"```[\w+\-#.]*|\s", "", b)) >= 60
+               for eh, b in separar_prosa_cercas(texto))
+
+
 def e_lixo(texto: str, min_chars: int = 180) -> bool:
     """True quando o pedaço (já limpo) não carrega semântica útil: estrutura
     de página (menu, índice, lista de estados), referências ou fragmento
     curto demais. Conservador: na dúvida, mantém (retorna False).
+
+    FENCE-AWARE (regra 8): cerca com código real é CONTEÚDO — nunca é lixo,
+    por mais curta que seja a prosa ao redor; as heurísticas abaixo pontuam
+    só a prosa.
     """
-    t = (texto or "").strip()
+    if _tem_codigo(texto):
+        return False
+    t = _so_prosa(texto).strip()
     if len(t) < min_chars:
         return True
     palavras = _palavras(t)
@@ -475,15 +530,21 @@ def score_chunk(texto: str) -> tuple[float, list[str]]:
 
     Usado pela ingestão (gate default) e pelo Modo Revisão (relatório).
     Puro, sem LLM, sem rede — determinístico. Na dúvida, mantém.
+
+    FENCE-AWARE (regra 8): os fatores pontuam a PROSA — pipes de bitwise,
+    indentação e símbolos DE CÓDIGO não são tabela/página. Cerca com código
+    real sustenta o chunk: piso 0.8 mesmo com prosa fraca (o código é o
+    conteúdo); sem cerca, o comportamento é o de sempre.
     """
     t = (texto or "").strip()
     motivos: list[str] = []
     if not t:
         return 0.0, ["vazio"]
-    palavras = _palavras(t)
+    alvo = _so_prosa(t)
+    palavras = _palavras(alvo)
     n = len(palavras)
     # 1) links: proporção dos tokens que são URLs
-    links = len(_RE_LINK.findall(t))
+    links = len(_RE_LINK.findall(alvo))
     d_links = links / n if n else 1.0
     nota_links = max(0.0, 1.0 - d_links * 4)   # >25% de links zera o fator
     if d_links > 0.10:
@@ -498,31 +559,39 @@ def score_chunk(texto: str) -> tuple[float, list[str]]:
     if n < 15:
         motivos.append(f"{n} palavra(s) (<15)")
     # 4) alfanumérico
-    alfa = sum(c.isalnum() for c in t) / len(t)
+    alfa = sum(c.isalnum() for c in alvo) / max(len(alvo), 1)
     nota_alfa = min(1.0, max(0.0, (alfa - 0.45) / 0.40))
     if alfa < 0.55:
         motivos.append(f"símbolos dominando (alfa {alfa:.0%})")
+    nota = None
     # 5) JSON embutido (evidência real: blocos com displayPrice/priceAmount
     #    ingeridos na extinta coleção psicanalista)
-    if _parece_json(t):
+    if _parece_json(alvo):
         motivos.append("estrutura JSON embutida")
-        return 0.05, motivos
-    # 6) lista de nomes próprios SEM frase (índice/tabela wiki — evidência
-    #    real da culinaria: "Wongi Manilkara kauki Wooly jelly palm...")
-    if n >= 8:
-        nomes = _razao_nomes(palavras)
-        pont = sum(t.count(c) for c in ".!?:;")
-        if nomes > 0.5 and pont / max(n, 1) < 0.03:
-            motivos.append(f"lista de nomes sem frase (caps {nomes:.0%})")
-            return 0.20, motivos
-    # 7) TABELA markdown (pipes dominando): "| valor | valor |" é grade de
-    #    dados, não prosa — evidência real das tabelas wiki ingeridas
-    d_pipes = t.count("|") / max(n, 1)
-    if d_pipes > 0.15:
-        motivos.append(f"tabela markdown (pipes {d_pipes:.0%})")
-        return 0.15, motivos
-    nota = (_PESOS["links"] * nota_links + _PESOS["unicos"] * nota_unicos
-            + _PESOS["palavras"] * nota_pal + _PESOS["alfa"] * nota_alfa)
+        nota = 0.05
+    else:
+        # 6) lista de nomes próprios SEM frase (índice/tabela wiki — evidência
+        #    real da culinaria: "Wongi Manilkara kauki Wooly jelly palm...")
+        if n >= 8:
+            nomes = _razao_nomes(palavras)
+            pont = sum(alvo.count(c) for c in ".!?:;")
+            if nomes > 0.5 and pont / max(n, 1) < 0.03:
+                motivos.append(f"lista de nomes sem frase (caps {nomes:.0%})")
+                nota = 0.20
+        if nota is None:
+            # 7) TABELA markdown (pipes dominando): "| valor | valor |" é
+            #    grade de dados, não prosa — evidência real das tabelas wiki
+            d_pipes = alvo.count("|") / max(n, 1)
+            if d_pipes > 0.15:
+                motivos.append(f"tabela markdown (pipes {d_pipes:.0%})")
+                nota = 0.15
+    if nota is None:
+        nota = (_PESOS["links"] * nota_links + _PESOS["unicos"] * nota_unicos
+                + _PESOS["palavras"] * nota_pal + _PESOS["alfa"] * nota_alfa)
+    if nota < 0.8 and _tem_codigo(t):
+        # cerca com código real SUSTENTA o chunk: piso 0.8 mesmo com prosa
+        # fraca — os motivos seguem no relatório para transparência
+        nota = 0.8
     return round(nota, 3), motivos
 
 
@@ -546,3 +615,25 @@ def url_de(texto: str) -> str | None:
     """Extrai a linha '> fonte: URL' gravada pelo seed (se houver)."""
     m = re.search(r"^\s*>\s*fonte:\s*(\S+)", texto, flags=re.M | re.I)
     return m.group(1) if m else None
+
+
+def descricao_de(texto: str) -> str | None:
+    """Extrai a linha '> descrição: …' do seed AUTORAL (uma linha do que o
+    documento cobre — viaja na metadata e alimenta o cabeçalho "Para que
+    serve" do padrão de ingestão)."""
+    m = re.search(r"^\s*>\s*descri[çc][ãa]o:\s*(.+)$", texto, flags=re.M | re.I)
+    return m.group(1).strip()[:200] if m and m.group(1).strip() else None
+
+
+_RE_CABECALHO_SEED = re.compile(
+    r"^[ \t]*>[ \t]*(?:fonte|reda[çc][ãa]o|descri[çc][ãa]o)[ \t]*:.*\r?$",
+    re.I | re.M)
+
+
+def tirar_cabecalho_seed(texto: str) -> str:
+    """Remove as linhas de PROCEDÊNCIA do cabeçalho do seed ('> fonte:',
+    '> redação:', '> descrição:') do corpo — url/descrição já foram para a
+    metadata; sobrando no texto, entram no embedding de todo primeiro chunk
+    como ruído. SÓ linhas '>' (prosa "Fonte: …" sem '>' é conteúdo, fica).
+    O '# título' fica (âncora da seção h1). Idempotente."""
+    return _RE_CABECALHO_SEED.sub("", texto).strip("\n")

@@ -16,11 +16,14 @@ conversa; o container do chat nem acorda na estação.
    e o marcador *(traduzido)* quando o tradutor agiu. A RESPOSTA DIRETA
    (score alto) segue o MESMO idioma da pergunta: fragmento em inglês para
    pergunta em português sai traduzido (spec traducao.md) com o marcador.
-2. Do fragmento entra só o TRECHO mais parecido com a pergunta (parágrafo
-   ± vizinhos, até ~900 caracteres), nunca a seção inteira; detritos de
-   citação da Wikipédia (<sup>, <ref>, [12]) fora; cabeçalho de indexação
-   do chunk removido; linhas de METADADO de datasets (repo_name, sha256,
-   "campo: valor | campo: valor") fora — só o conteúdo da linha entra.
+2. Do fragmento entra o TRECHO mais parecido com a pergunta (parágrafo
+   ± vizinhos, até ~1600 caracteres — `DIGEST_MAX` no .env: seção completa
+   da base autoral quando cabe), corte só em borda de parágrafo/palavra;
+   CERCA DE CÓDIGO NUNCA É CORTADA nem no trecho nem na exibição (regra
+   8); detritos de citação da Wikipédia (<sup>, <ref>, [12]) fora;
+   cabeçalho de indexação do chunk removido; linhas de METADADO de
+   datasets (repo_name, sha256, "campo: valor | campo: valor") fora — só
+   o conteúdo da linha entra.
 3. PEDIDO DE CÓDIGO ("hello world", "exemplo", "como fazer em X", "criar
    um script"): quando o fragmento contém bloco de código cercado
    (```), o bloco entra INTEIRO e VERBATIM como resposta do item —
@@ -44,6 +47,25 @@ conversa; o container do chat nem acorda na estação.
    que ficaria vazio segue como está (a honestidade da regra 4 cobre o
    resto — classificação errada vira aviso de sem-sinal, nunca resposta
    de outro assunto).
+7. BASE DEV AUTORAL (pedido do dono 13/09: "pode usar a llm para montar os
+   documentos… quero deixar o rag perfeito, sem cortes ou informações
+   incompletas, para usar depois sem o uso de llms"): as coleções dev
+   (dotnet, python, rust, go, nodejs, javascript, typescript, java, ruby)
+   são documentos AUTORAIS completos em PORTUGUÊS, redigidos COM IA
+   apenas na MONTAGEM dos .md (datasets/seed/{colecao}/, formato
+   `# título` + `> fonte:` + `> redação:` + `> descrição:`) — a CONSULTA
+   segue 100% sem LLM. Pergunta PT acha documento PT: sem tradutor, sem
+   marcador *(traduzido)*. Rebuild: `scripts/seed_autoral.py` (apaga a
+   coleção inteira e reingere só os autorais — wipe total, sem fantasma).
+8. GARANTIA VERBATIM EM CADEIA (o código é extraído, nunca reescrito):
+   (i) a LIMPEZA de ingestão é fence-aware — cerca ``` fechada sai byte a
+   byte (indentação, linhas de símbolo, fechamento); (ii) o SPLIT nunca
+   pica cerca entre chunks (bloco atômico, mesmo acima de CHUNK_SIZE) e
+   os cabeçalhos markdown só cortam na prosa; (iii) os GATES de
+   qualidade pontuam a prosa — pipes/indentação de código não são tabela
+   nem ruído; (iv) o DIGEST nunca corta dentro de cerca. Autoria: código
+   em cercas ``` com tag de linguagem; exemplos que citam ``` interno
+   usam cerca `~~~`.
 
 ## Palavras usadas pelo código
 
