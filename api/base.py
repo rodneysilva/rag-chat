@@ -1987,6 +1987,11 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                 if not body.history and top_score >= config.SCORE_DIRETO:
                     doc_top = max(achados, key=lambda t: float(t[1]))[0]
                     conteudo = doc_top.page_content
+                    # 🧹 DUMP HF (linhas "[linha N] campo: v | …") — mesmo
+                    # belt-and-suspenders do digest: a higienização tira da
+                    # base, mas o fragmento que ainda não passou por ela não
+                    # pode virar resposta com repo_name/sha256 na frente
+                    conteudo = limpeza.limpar_dump_hf(conteudo)
                     # 🧹 HTML CRU (página mal ingerida que virou chunk): a
                     # resposta direta NUNCA devolve marcação — extrai o texto
                     # legível; sem conteúdo aproveitável, segue para o modelo.
@@ -2308,10 +2313,12 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
         if found:
             contadores.set_etapa("resposta (rag)")
             # limite acompanha o conjunto CURADO (rerank top-4 base, top-6
-            # com web, +resgate por versão): o corte fixo de 4 jogava fora
-            # páginas da web e extras de versão que a busca trouxe de propósito
-            answer = rag.digest_rag(body.question, docs,
-                                    limite=min(len(docs), 8))
+            # com web, +resgate por versão); SEM SINAL o digest fica ENXUTO
+            # (3): "apenas o mais próximo, por referência" — 8 fragmentos de
+            # outro assunto é parede de texto, não referência
+            answer = rag.digest_rag(
+                body.question, docs,
+                limite=min(len(docs), 3 if sem_sinal_topo is not None else 8))
             contadores.set_etapa(None)
             if sem_sinal_topo is not None:
                 # o reranker (bilíngue) leu a pergunta × cada fragmento e

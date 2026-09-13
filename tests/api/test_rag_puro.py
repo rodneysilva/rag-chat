@@ -141,6 +141,23 @@ def test_rag_puro_sem_sinal_avisa_em_vez_de_responder_outro_assunto(
     assert "vatapá" in r["answer"]        # …material segue como referência
 
 
+def test_rag_puro_sem_sinal_fica_enxuto(cenario, monkeypatch):
+    """Sem sinal, o material é "por referência" (regra 4): 8 fragmentos de
+    outro assunto é parede de texto — o digest para no 3."""
+    base, rag = cenario
+    monkeypatch.setattr(base.rerank, "rerank", lambda *a, **kw: None)
+    monkeypatch.setattr(base.rerank, "notas_de",
+                        lambda *a, **kw: [0.02] * 5)
+    fracos = [(_doc(f"Fragmento {i} de outro assunto, longe da pergunta.", "c"),
+               0.50, "c") for i in range(1, 6)]
+    monkeypatch.setattr(rag, "search", lambda *a, **kw: (fracos, {}))
+    r = _processar_query(QueryIn(question="receita de frango", mode="rag",
+                                 collections=["c"]))
+    assert r["answer"].startswith("⚠️")
+    assert "Fragmento 3" in r["answer"]    # 3 de referência…
+    assert "Fragmento 4" not in r["answer"]  # …o resto não é referência
+
+
 def test_rag_puro_digest_inclui_paginas_da_web(cenario, monkeypatch):
     """Bug real do dono 12/09 ("não está considerando a pesquisa que fiz na
     web"): as páginas baixadas eram anexadas DEPOIS dos fragmentos da base e
@@ -305,3 +322,67 @@ def test_digest_rag_sanitiza_recorta_e_numera():
     assert "prato paraense" in out                # recortou o parágrafo CERTO
     assert "Sobremesas regionais" not in out      # …não o trecho inteiro
     assert "**2" not in out                       # vazio não ganhou número
+
+
+def test_digest_agrupa_por_assunto_e_renumera():
+    """Regra 5 (pedido do dono 12/09: "não tem como organizar melhor as
+    informações?"): fragmentos de ASSUNTOS diferentes ficam em seções
+    próprias — o código junto do código, a cozinha junto da cozinha — com
+    a numeração seguindo a ordem VISUAL (agrupada)."""
+    from core import rag
+    docs = [
+        Document(page_content="O vatapá é um prato paraense à base de dendê.",
+                 metadata={"colecao": "culinaria", "area": "cozinha regional",
+                           "titulo": "Vatapá"}),
+        Document(page_content="Um controller ASP.NET expõe endpoints REST.",
+                 metadata={"colecao": "dotnet", "area": "desenvolvimento",
+                           "titulo": "Controllers"}),
+        Document(page_content="O caruru acompanha o vatapá na tradição.",
+                 metadata={"colecao": "culinaria", "area": "cozinha regional",
+                           "titulo": "Caruru"}),
+    ]
+    out = rag.digest_rag("me mostre receitas e código", docs)
+    # duas seções, cada assunto junto do seu
+    assert "### cozinha regional" in out and "### desenvolvimento" in out
+    assert out.index("Vatapá") < out.index("Caruru")       # mesmo grupo junto
+    assert out.index("Controllers") > out.index("Caruru")  # …e depois do outro
+    # numeração segue a ordem VISUAL (1,2 no primeiro grupo; 3 no segundo)
+    assert "**1 · Vatapá**" in out and "**2 · Caruru**" in out
+    assert "**3 · Controllers**" in out
+
+
+def test_digest_assunto_unico_seguir_sem_secoes():
+    """Um assunto só (o caso normal): sem cabeçalhos de seção — a saída é a
+    de sempre (a seção só existe quando há o que separar)."""
+    from core import rag
+    docs = [
+        Document(page_content="O vatapá é um prato paraense à base de dendê.",
+                 metadata={"colecao": "culinaria", "area": "cozinha regional",
+                           "titulo": "Vatapá"}),
+        Document(page_content="O caruru acompanha o vatapá na tradição.",
+                 metadata={"colecao": "culinaria", "area": "cozinha regional",
+                           "titulo": "Caruru"}),
+    ]
+    out = rag.digest_rag("o que é o vatapá?", docs)
+    assert "###" not in out
+
+
+def test_digest_nao_exibe_dump_de_metadados_hf(monkeypatch):
+    """Belt-and-suspenders da regra 2: o fragmento ainda NÃO higienizado
+    (dump "[linha N] repo_name: … | text: …") não pode virar resposta — o
+    digest tira o dump na hora e mostra só o conteúdo."""
+    from core import rag, tradutor
+    # tradutor devolve o PRÓPRIO texto (o teste olha o conteúdo, não a
+    # tradução — indisponível seria trocar por "x" e esconder o dump)
+    monkeypatch.setattr(tradutor, "traduzir_lote", lambda ts, **kw: list(ts))
+    dump = ("# codeparrot/github-code · default/train (linhas 1–1)\n"
+            "[linha 7] repo_name: dotnet/examples | path: A.cs | "
+            "content_sha256: 9f2c | text: using System;\n"
+            "var api = WebApplication.CreateBuilder(args);\n")
+    doc = Document(page_content=dump,
+                   metadata={"colecao": "dotnet", "area": "desenvolvimento",
+                             "titulo": "Exemplo de API"})
+    out = rag.digest_rag("como desenvolvo uma api em dotnet?", [doc])
+    for sujo in ("repo_name:", "content_sha256:", " | "):
+        assert sujo not in out
+    assert "WebApplication.CreateBuilder" in out   # conteúdo preservado

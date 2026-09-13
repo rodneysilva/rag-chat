@@ -17,7 +17,8 @@ conversa; o container do chat nem acorda na estação.
 2. Do fragmento entra só o TRECHO mais parecido com a pergunta (parágrafo
    ± vizinhos, até ~900 caracteres), nunca a seção inteira; detritos de
    citação da Wikipédia (<sup>, <ref>, [12]) fora; cabeçalho de indexação
-   do chunk removido.
+   do chunk removido; linhas de METADADO de datasets (repo_name, sha256,
+   "campo: valor | campo: valor") fora — só o conteúdo da linha entra.
 3. PEDIDO DE CÓDIGO ("hello world", "exemplo", "como fazer em X", "criar
    um script"): quando o fragmento contém bloco de código cercado
    (```), o bloco entra INTEIRO e VERBATIM como resposta do item —
@@ -25,10 +26,13 @@ conversa; o container do chat nem acorda na estação.
    responde como sempre.
 4. HONESTIDADE: o reranker bilíngue leu pergunta × cada fragmento; se
    NADA tem relação real com o pedido, a resposta AVISA e o material só
-   entra "por referência" — nunca entrega outro assunto como se fosse a
-   resposta.
+   entra "por referência" (no máximo 3 fragmentos) — nunca entrega outro
+   assunto como se fosse a resposta.
 5. ORDEM = relevância do reranker: fragmentos da base e páginas baixadas
-   da web disputam em igualdade (rerank base+web).
+   da web disputam em igualdade (rerank base+web). Com fragmentos de
+   ASSUNTOS diferentes, o digest AGRUPA por assunto (área do domínio) —
+   seções na ordem do melhor fragmento de cada grupo, ordem do reranker
+   mantida DENTRO do grupo; um assunto só segue sem seções.
 6. ROTEAMENTO DE DOMÍNIO (regex, sem LLM — pedido do dono 12/09: "eu
    perguntei de código e me falou de ingredientes"): a pergunta declara o
    assunto e o escopo acompanha — termos de código (linguagem/framework,

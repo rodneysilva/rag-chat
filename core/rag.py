@@ -652,6 +652,10 @@ def digest_rag(question, docs, limite: int = 4) -> str:
                 txt = _limpeza.html_para_texto(txt) or txt
         except Exception:
             pass  # sanitização falhou = entrega o texto cru (blinda o fluxo)
+        # 🧹 DUMP HF (linhas "[linha N] campo: v | …"): a higienização tira
+        # da base, mas o digest não pode exibir o lixo que AINDA não passou
+        # por ela — belt-and-suspenders (regra 2 da spec)
+        txt = _limpeza.limpar_dump_hf(txt)
         # header "[título contextual]" do chunk é METADADO de indexação — fora
         # (cap 260: o padrão novo "O que é · Para que serve · parte i/n" é longo)
         txt = re.sub(r"^\s*\[[^\]\n]{1,260}\][ \t]*\r?\n", "", txt, count=1)
@@ -714,28 +718,51 @@ def digest_rag(question, docs, limite: int = 4) -> str:
     # 2ª passada: cabeçalhos numerados + separadores (o marcador de tradução
     # vive na spec core/specs/traducao.md — palavras ao usuário fora do código)
     from .tradutor import palavra as _palavra_trad
-    partes = []
+    # 🗂️ AGRUPAMENTO POR ASSUNTO (regra 5 da spec — pedido do dono 12/09:
+    # "não tem como organizar melhor as informações?"): fragmentos de
+    # assuntos DIFERENTES ficam em seções próprias (código junto com código,
+    # cozinha com cozinha) — a seção entra na ordem do MELHOR fragmento do
+    # grupo e, dentro do grupo, a ordem do reranker manda. Um assunto só
+    # (ou área desconhecida em tudo) = sem seções: saída idêntica à de antes
+    grupos: list[tuple[str, list]] = []
+    indice: dict[str, list] = {}
     for it in itens:
-        # 🎯 CONSULTA CONSOLIDADA (regra 6 da spec consulta_consolidada.md):
-        # o NOME da coleção NÃO aparece na resposta — escopo é assunto da
-        # administração. A origem visível é a ÁREA (domínio do texto) ou o
-        # marcador 🌐 web para páginas baixadas
-        if it["colecao"] == "🌐 web":
-            origem = it["colecao"]      # "🌐 web · web" seria redundância
-        else:
-            origem = str(it["area"] or "").strip()
-        cab = (f"**{it['n']} · {it['titulo']}**" if it["titulo"]
-               else f"**{it['n']}**")
-        if origem:
-            cab += f" — {origem}"
-        # O QUE É (regra 1 da spec rag_puro.md): a metadata do padrão de
-        # ingestão traz "o que é" — subtítulo quando difere do título
-        oq = it.get("o_que_e") or ""
-        if oq and oq != str(it["titulo"] or ""):
-            cab += f"\n\n*{oq[:140]}*"
-        if it.get("traduzido"):
-            cab += " " + _palavra_trad("MARCADOR_TRADUZIDO", "*(traduzido)*")
-        partes.append(cab + "\n\n" + it["trecho"])
+        chave = (it["colecao"] if it["colecao"] == "🌐 web"
+                 else str(it["area"] or "").strip())
+        if chave not in indice:
+            indice[chave] = []
+            grupos.append((chave, indice[chave]))
+        indice[chave].append(it)
+    partes, n = [], 0
+    for chave, grupo in grupos:
+        blocos = []
+        for it in grupo:
+            n += 1
+            it["n"] = n            # renumera na ordem VISUAL (agrupada)
+            # 🎯 CONSULTA CONSOLIDADA (regra 6 da spec consulta_consolidada.md):
+            # o NOME da coleção NÃO aparece na resposta — escopo é assunto da
+            # administração. A origem visível é a ÁREA (domínio do texto) ou o
+            # marcador 🌐 web para páginas baixadas
+            if it["colecao"] == "🌐 web":
+                origem = it["colecao"]   # "🌐 web · web" seria redundância
+            else:
+                origem = str(it["area"] or "").strip()
+            cab = (f"**{it['n']} · {it['titulo']}**" if it["titulo"]
+                   else f"**{it['n']}**")
+            if origem:
+                cab += f" — {origem}"
+            # O QUE É (regra 1 da spec rag_puro.md): a metadata do padrão de
+            # ingestão traz "o que é" — subtítulo quando difere do título
+            oq = it.get("o_que_e") or ""
+            if oq and oq != str(it["titulo"] or ""):
+                cab += f"\n\n*{oq[:140]}*"
+            if it.get("traduzido"):
+                cab += " " + _palavra_trad("MARCADOR_TRADUZIDO", "*(traduzido)*")
+            blocos.append(cab + "\n\n" + it["trecho"])
+        secao = "\n\n---\n\n".join(blocos)
+        if chave and len(grupos) > 1:
+            secao = f"### {chave}\n\n{secao}"
+        partes.append(secao)
     return "\n\n---\n\n".join(partes)
 
 
