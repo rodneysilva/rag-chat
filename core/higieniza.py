@@ -22,7 +22,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
 
 from . import catalog, config, rag
-from .limpeza import e_lixo, limpar_texto
+from .limpeza import e_lixo, limpar_dump_hf, limpar_texto
 
 LOTE = 64  # pontos re-embedados por lote
 
@@ -62,11 +62,23 @@ def higienizar_colecao(colecao: str, log=None) -> dict:
         payload = p.payload or {}
         md = dict(payload.get("metadata") or {})
         original = str(payload.get("page_content", ""))
+        # 🧹 DUMP HF ("[linha N] campo: v | … | text: <conteúdo>") sai ANTES
+        # de tudo e em QUALQUER camada: o código ingerido de datasets
+        # carregava os metadados da linha no texto (case real do dono 12/09:
+        # resposta de .NET abrindo com dump de pipes). Conservador: sem o
+        # marcador, o texto volta intacto — e código só é RE-EMBEDADO quando
+        # o dump saiu de verdade (o texto mudou)
+        original = limpar_dump_hf(original)
         if md.get("camada") == "codigo":
             # CÓDIGO não passa pela limpeza de prosa (que colapsa indentação
             # e costura linhas) nem pelo e_lixo (heurística de texto corrido)
             # — o ingest isenta por camada, a higienização precisa isentar tb
-            intactos += 1
+            if original != str(payload.get("page_content", "")):
+                md.setdefault("arquivo", str(md.get("source", "?"))
+                              .replace("\\", "/").rsplit("/", 1)[-1])
+                reembedar.append((p.id, original, md))
+            else:
+                intactos += 1
             continue
         # cabeçalho contextual de ingests novos não é ruído: preserva
         cab = ""

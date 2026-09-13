@@ -137,6 +137,67 @@ def limpar_texto(texto: str) -> str:
     return _preenchimento(t)
 
 
+# ---------- dump de linhas HF → conteúdo (fim do "campo: v | campo: v | …") ----
+# O core/hf.py antigo serializava TODAS as colunas da linha do dataset no
+# page_content: "repo_name: x | path: y | sha256: … | text: <código>" — os
+# metadados poluíam o embedding E a resposta (caso real do dono 12/09:
+# digest de .NET abrindo com dump de pipes). O formato novo grava só o
+# conteúdo; esta função LIMPA o que já está gravado (e blinda o digest).
+
+# colunas de METADADO (tudo que não é conteúdo da linha)
+_CAMPOS_META_HF = re.compile(
+    r"^(repo_name|path|source_url|commit_or_blob_id|license|source_dataset|"
+    r"content_sha256|category_slice|token_count|is_synthetic|quality_score|"
+    r"collected_at|size|language|stars|forks|watchers|issues|open_issues|"
+    r"linhas|row|idx|index|id|user|created_at|updated_at|type|name|title|"
+    r"description|url|html_url|default_branch|score|date|timestamp|created|"
+    r"modified|tags|labels|topic|topics|meta|metadata|fork|watch)$", re.I)
+# marcador de campo no dump: início do trecho ou separador " | " antes de "campo: "
+_RE_CAMPO_HF = re.compile(r"(?:^|\s\|\s)([a-z_][a-z0-9_]*): ", re.I)
+
+
+def limpar_dump_hf(texto: str) -> str:
+    """Remove o DUMP DE METADADOS das linhas de datasets HF do page_content
+    — o CONTEÚDO da linha (código/texto) fica, com procedência compacta.
+
+        [linha 7] repo_name: x | path: y | … | text: <conteúdo multilinha>
+    vira
+        [linha 7] x · y
+        <conteúdo>
+
+    CONSERVADOR: sem marcador "[linha N]" ou sem campo de conteúdo
+    reconhecível, o trecho volta INTACTO (nunca corrói formato desconhecido).
+    O corte do conteúdo é o PRIMEIRO campo fora da lista de metadados —
+    o conteúdo pode conter " | " e "campo: " (código tem os dois).
+    """
+    if not texto or "[linha " not in texto:
+        return texto
+    saida = []
+    # quebra ANTES de cada marcador de linha; o segmento 0 é o cabeçalho "# …"
+    for seg in re.split(r"(?m)(?=^\[linha \d+\])", texto):
+        m = re.match(r"^\[linha (\d+)\]\s?(.*)$", seg, re.S)
+        if not m:
+            saida.append(seg)                    # cabeçalho/prosa: passa direto
+            continue
+        n, resto = m.group(1), m.group(2)
+        corte = next((c for c in _RE_CAMPO_HF.finditer(resto)
+                      if not _CAMPOS_META_HF.match(c.group(1))), None)
+        if corte is None:
+            saida.append(seg)                    # sem conteúdo reconhecível: intacto
+            continue
+        meta, conteudo = resto[:corte.start()], resto[corte.end():]
+        prov = []
+        for campo in ("repo_name", "path"):
+            pm = re.search(rf"(?:^|\s\|\s){campo}: (.*?)(?=\s\|\s[a-z_][a-z0-9_]*: |$)",
+                           meta, re.I)
+            if pm and pm.group(1).strip():
+                prov.append(pm.group(1).strip()[:80])
+        linha = f"[linha {n}]" + (f" {' · '.join(prov)}" if prov else "")
+        saida.append(linha + "\n" + conteudo.strip("\n"))
+    novo = "".join(saida)
+    return novo if novo.strip() else texto
+
+
 # ---------- HTML cru → texto legível (resposta direta da base) ----------
 
 # marcadores de PÁGIna inteira — usado junto com DENSIDADE de tags (um

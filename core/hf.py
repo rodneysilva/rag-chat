@@ -183,6 +183,11 @@ def card(dataset_id: str, log=print) -> dict:
 _ROWS = "https://datasets-server.huggingface.co"
 _LINHAS_POR_DOC = 25          # linhas agrupadas por Document (chunk context)
 _CAMPO_MAX = 600              # corta valores gigantes (html/base64) por campo
+# colunas que CARREGAM o conteúdo da linha (código/texto) — o nome canônico
+# vence; sem nenhum deles, o campo de MAIOR valor é o conteúdo (datasets
+# variam o nome, mas o conteúdo é sempre o mais longo)
+_CAMPOS_CONTEUDO = {"text", "content", "code", "body", "answer", "response",
+                    "conteudo", "codigo", "texto", "page_content"}
 
 
 def dados(dataset_id: str, max_linhas: int = 5000, log=print) -> list:
@@ -236,9 +241,24 @@ def dados(dataset_id: str, max_linhas: int = 5000, log=print) -> list:
                         else str(v))
                     valor = str(valor).strip()
                     if valor:
-                        campos.append(f"{k}: {valor[:_CAMPO_MAX]}")
-                if campos:
-                    texto.append(f"[linha {offset + i + n + 1}] " + " | ".join(campos))
+                        campos.append((k, valor))
+                if not campos:
+                    continue
+                # 🧹 CONTEÚDO ≠ METADADO (fim do dump de pipes — case real do
+                # dono 12/09: resposta de .NET abria com "repo_name: x |
+                # path: y | sha256: …"): campo de conteúdo pelo NOME canônico
+                # (text/content/code…) ou, sem nenhum, o de MAIOR valor; o
+                # resto vira procedência compacta de UMA linha (repo · path)
+                par = next(((k, v) for k, v in campos
+                            if k.lower() in _CAMPOS_CONTEUDO), None) \
+                    or max(campos, key=lambda kv: len(kv[1]))
+                k_conteudo, conteudo = par
+                meta = {k: v[:80] for k, v in campos if k != k_conteudo}
+                prov = " · ".join(v for v in (meta.get("repo_name"),
+                                              meta.get("path")) if v)
+                texto.append(f"[linha {offset + i + n + 1}]"
+                             + (f" {prov}" if prov else ""))
+                texto.append(conteudo[:_CAMPO_MAX])
             if len(texto) > 1:
                 docs.append(Document(
                     page_content="\n".join(texto),
@@ -247,6 +267,7 @@ def dados(dataset_id: str, max_linhas: int = 5000, log=print) -> list:
                         "titulo": f"{dataset_id.split('/')[-1]} · dados",
                         "arquivo": dataset_id.replace("/", "_") + "_dados.md",
                         "url": f"https://huggingface.co/datasets/{dataset_id}",
+                        "dataset": dataset_id, "config": config, "split": split,
                     }))
         linhas += len(rows)
         offset += len(rows)
