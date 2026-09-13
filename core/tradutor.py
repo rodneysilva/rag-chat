@@ -77,16 +77,21 @@ def _carregar(modelo: str, log):
 
 
 def _degenerada(traducao: str) -> bool:
-    """Saída em LOOP de repetição ('você vai, você vai…' até o teto de
-    tokens — degeneração do greedy em texto fora do domínio, vista ao vivo
-    13/09 no trecho do dev.java): bigrama repetido além do plausível numa
-    janela curta não existe em tradução de verdade."""
+    """Saída em LOOP de repetição ('você vai, você e você vai, você…' até
+    o teto de tokens — degeneração do greedy em texto fora do domínio,
+    vista ao vivo 13/09 no trecho do dev.java): UMA palavra dominando a
+    janela, ou um bigrama repetido além do plausível, não existe em
+    tradução de verdade. O padrão VARIADO (você vai / você e você vai /
+    você, você) escapa de trava de n-gramas — a dominância pega."""
     from collections import Counter
     palavras = traducao.lower().split()
     if len(palavras) < 30:
         return False
     for ini in range(0, len(palavras) - 50 + 1, 25):
         janela = palavras[ini:ini + 50]
+        contagens = Counter(janela)
+        if contagens.most_common(1)[0][1] > 20:   # 1 palavra = 40% da janela
+            return True
         if Counter(zip(janela, janela[1:])).most_common(1)[0][1] > 8:
             return True
     return False

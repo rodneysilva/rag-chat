@@ -56,6 +56,18 @@ def test_degenerada_detecta_o_loop():
     assert tradutor._degenerada(misto) is True
 
 
+def test_degenerada_detecta_o_loop_variado():
+    """O padrão REAL visto em produção: 'você vai / você e você vai /
+    você, você' — nenhum 4-grama (nem bigrama) repete 9× seguidas, mas UMA
+    palavra domina a janela. A dominância de unigrama pega."""
+    variado = ("você vai, você vai, você e você vai, você vai, você, "
+               "você vai, você, você, você, você, você, você, você, "
+               "você vai, você e você vai, você, você vai, você, você, "
+               "você vai, você e você, você vai, você vai, você, você, "
+               "você vai, você e você vai, você vai, você, você vai, ") * 4
+    assert tradutor._degenerada(variado) is True
+
+
 def test_degenerada_nao_acusa_prosa_normal():
     bom = ("O vatapá é um prato paraense à base de dendê, pão e camarão "
            "seco, servido com arroz branco. O caruru acompanha o vatapá na "
