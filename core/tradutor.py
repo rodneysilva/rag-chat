@@ -76,6 +76,22 @@ def _carregar(modelo: str, log):
     _modelos[modelo] = (tok, motor)
 
 
+def _degenerada(traducao: str) -> bool:
+    """Saída em LOOP de repetição ('você vai, você vai…' até o teto de
+    tokens — degeneração do greedy em texto fora do domínio, vista ao vivo
+    13/09 no trecho do dev.java): bigrama repetido além do plausível numa
+    janela curta não existe em tradução de verdade."""
+    from collections import Counter
+    palavras = traducao.lower().split()
+    if len(palavras) < 30:
+        return False
+    for ini in range(0, len(palavras) - 50 + 1, 25):
+        janela = palavras[ini:ini + 50]
+        if Counter(zip(janela, janela[1:])).most_common(1)[0][1] > 8:
+            return True
+    return False
+
+
 def traduzir_lote(textos: list[str], log=print,
                   modelo: str | None = None) -> list[str | None] | None:
     """Traduz VÁRIOS textos em UM lote (uma passada do modelo — 4 trechos
@@ -108,14 +124,23 @@ def traduzir_lote(textos: list[str], log=print,
         # apenda </s>, como o Marian espera) e decodifica a hipótese de volta
         lotes = [tok.convert_ids_to_tokens(tok(t).input_ids) for t in limpos]
         # GREEDY (beam 1) + teto realista: trecho do digest tem ≤900 chars ≈
-        # ~250 tokens de saída — apresentação não pode travar a resposta
+        # ~250 tokens de saída — apresentação não pode travar a resposta.
+        # no_repeat_ngram_size=4: o greedy DEGENERAVA em loop ("você vai"
+        # ×N — texto fora do domínio); 4-grama repetido é loop, não prosa
         resultados = motor.translate_batch(lotes, beam_size=1,
-                                           max_decoding_length=350)
-        return [
-            tok.decode(tok.convert_tokens_to_ids(r.hypotheses[0]),
-                       skip_special_tokens=True).strip() or None
-            for r in resultados
-        ]
+                                           max_decoding_length=350,
+                                           no_repeat_ngram_size=4)
+        saida = []
+        for r in resultados:
+            txt = (tok.decode(tok.convert_tokens_to_ids(r.hypotheses[0]),
+                              skip_special_tokens=True).strip() or None)
+            if txt and _degenerada(txt):
+                log(palavra("MSG_DEGENERADA",
+                            "⚠️ tradução saiu em loop de repetição — trecho "
+                            "no idioma original"), "busca")
+                txt = None
+            saida.append(txt)
+        return saida
     except Exception as e:
         log(palavra("MSG_FALHA",
                     "⚠️ tradução falhou ({erro}) — trechos no idioma original",

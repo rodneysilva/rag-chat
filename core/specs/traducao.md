@@ -26,7 +26,11 @@ GPU da estação.
    trecho no idioma original, aviso único em silêncio — a resposta nunca
    derruba por causa da tradução.
 6. Geração GREEDY (beam 1) com teto de ~350 tokens por item, no motor
-   ctranslate2 INT8: apresentação não pode travar a resposta.
+   ctranslate2 INT8: apresentação não pode travar a resposta. O greedy
+   pode DEGENERAR em loop de repetição ("você vai" ×N até o teto — visto
+   ao vivo 13/09 no trecho do dev.java, texto fora do domínio do modelo):
+   a decodificação bloqueia 4-gramas repetidos e a saída degenerada é
+   DESCARTADA — o trecho fica no idioma original (regra 5).
 
 ## Palavras usadas pelo código
 
@@ -37,4 +41,5 @@ MSG_CARREGANDO: ⇄ carregando tradutor ({modelo}, CPU; 1ª vez baixa/converte p
 MSG_CONVERTENDO: ⇄ 1ª vez: convertendo o modelo para ctranslate2 int8 (usa torch, ~1 min; as próximas cargas abrem direto)…
 MSG_INDISPONIVEL: ⇄ tradutor indisponível (ctranslate2 não instalado) — os fragmentos ficam no idioma original
 MSG_FALHA: ⚠️ tradução falhou ({erro}) — trechos no idioma original
+MSG_DEGENERADA: ⚠️ tradução saiu em loop de repetição ({n}×) — trecho no idioma original
 MSG_PREAQUECIDO: ⇄ tradutor pré-aquecido no boot — trechos EN saem traduzidos sem pagar a 1ª carga
