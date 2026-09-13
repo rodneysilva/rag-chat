@@ -13,7 +13,9 @@ conversa; o container do chat nem acorda na estação.
 1. HEADER PADRÃO de cada fragmento: número, título, o que é (quando a
    metadata traz e difere do título), origem (ÁREA do domínio, ou 🌐 web —
    nome de coleção NÃO aparece: regra 6 da spec consulta_consolidada.md) —
-   e o marcador *(traduzido)* quando o tradutor agiu.
+   e o marcador *(traduzido)* quando o tradutor agiu. A RESPOSTA DIRETA
+   (score alto) segue o MESMO idioma da pergunta: fragmento em inglês para
+   pergunta em português sai traduzido (spec traducao.md) com o marcador.
 2. Do fragmento entra só o TRECHO mais parecido com a pergunta (parágrafo
    ± vizinhos, até ~900 caracteres), nunca a seção inteira; detritos de
    citação da Wikipédia (<sup>, <ref>, [12]) fora; cabeçalho de indexação

@@ -540,6 +540,38 @@ def bloco_de_codigo(pergunta: str, texto: str, max_blocos: int = 2) -> str | Non
         return None
     blocos = _RE_BLOCO_CERCADO.findall(texto or "")
     return "\n\n".join(blocos[:max_blocos]) if blocos else None
+
+
+def traduzir_resposta_direta(pergunta: str, texto: str) -> str:
+    """Resposta DIRETA (score ≥ SCORE_DIRETO) num idioma que não o da
+    pergunta → sai traduzida, com o marcador da spec — a MESMA regra do
+    digest (caso real do dono 13/09: "Como desenvolvo uma api em dotnet?"
+    devolvia os passos do tutorial MS Learn EM INGLÊS: "Create a web
+    project — From the File menu…").
+
+    Bloco de código verbatim (regra 3) e texto já no idioma da pergunta
+    entram como estão. Trecho longo é RECORTADO (~900 chars, parágrafo
+    mais parecido) antes de traduzir — o motor opus-mt tem teto de ~350
+    tokens por item e truncar no meio seria pior que recortar na borda.
+    Tradutor é CPU (spec traducao.md): a LLM de conversa segue desligada.
+    """
+    if not texto or not _eh_portugues(pergunta or ""):
+        return texto
+    if texto.lstrip().startswith("```"):          # código verbatim: como está
+        return texto
+    if _eh_portugues(texto):
+        return texto
+    trecho = texto if len(texto) <= 1100 else _digest_trecho(
+        texto, _digest_termos(pergunta), pergunta_pt=True)
+    from .tradutor import palavra, traduzir_lote
+    try:
+        lote = traduzir_lote([trecho])
+    except Exception:
+        lote = None
+    if not lote or not lote[0]:
+        return texto                             # indisponível: original
+    return (lote[0] + " "
+            + palavra("MARCADOR_TRADUZIDO", "*(traduzido)*")).strip()
 _STOP_DIGEST = frozenset(
     "a o as os um uma uns umas de do da das dos e em no na nos nas por para "
     "com que qual quais quanto quando onde como quem cuja ao aos à às é foi "
@@ -665,6 +697,10 @@ def digest_rag(question, docs, limite: int = 4) -> str:
         txt = _RE_REF.sub(" ", txt)
         txt = _RE_NOTA.sub("", txt)
         txt = re.sub(r"[ \t]{2,}", " ", txt)
+        # ênfase colada ("select**New**" renderiza "selectNew"): espaço nas
+        # bordas do negrito FORA de cercas — o lixo já está na base, o reparo
+        # é na EXIBIÇÃO (limpeza.reparar_enfase é fence-aware)
+        txt = _limpeza.reparar_enfase(txt)
         txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
         # ⛳ PEDIDO DE CÓDIGO (regra 3 da spec rag_puro.md): o bloco cercado
         # do fragmento entra INTEIRO e VERBATIM — a base RESPONDE com o que

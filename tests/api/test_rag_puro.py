@@ -240,6 +240,69 @@ def test_resposta_direta_de_pedido_de_codigo_e_o_bloco(cenario, monkeypatch):
     assert "Guia rápido" not in r["answer"]   # só o bloco, sem a prosa
 
 
+def test_resposta_direta_em_ingles_sai_traduzida(cenario, monkeypatch):
+    """Pedido do dono 13/09 ("está vindo em inglês"): "Como desenvolvo uma
+    api em dotnet?" com score alto devolvia os passos do tutorial MS Learn
+    EM INGLÊS — a resposta direta não passava pelo tradutor do digest. Agora
+    pergunta PT + fragmento EN sai em PT via opus-mt, com o marcador. O
+    tradutor é CPU: a sentinela de LLM segue no lugar."""
+    from core import tradutor
+    base, rag = cenario
+    monkeypatch.setattr(base.config, "SCORE_DIRETO", 0.5)
+    enviadas = []
+
+    def _fake_lote(textos, **kw):
+        enviadas.extend(textos)
+        return ["Crie um projeto web — no menu Arquivo, selecione Novo > "
+                "Projeto…"]
+    monkeypatch.setattr(tradutor, "traduzir_lote", _fake_lote)
+    doc = _doc("## Create a web project\n- From the File menu, select "
+               "**New** >**Project** .\n- Enter *Web API* in the search box.")
+    monkeypatch.setattr(rag, "search",
+                        lambda *a, **kw: ([(doc, 0.67, "c")], {}))
+    r = _processar_query(QueryIn(question="Como desenvolvo uma api em dotnet?",
+                                 mode="rag", collections=["c"]))
+    assert "Crie um projeto web" in r["answer"]           # traduzido…
+    assert "Create a web project" not in r["answer"]      # …original não vaza
+    assert "*(traduzido)*" in r["answer"]                 # marcador da spec
+    assert enviadas and "Create a web project" in enviadas[0]  # foi ao motor
+
+
+def test_resposta_direta_portugues_nao_va_ao_tradutor(cenario, monkeypatch):
+    """Fragmento já em PT (ou tradutor indisponível) entra como está — sem
+    marcador, sem chamada ao motor."""
+    from core import tradutor
+    base, rag = cenario
+    monkeypatch.setattr(base.config, "SCORE_DIRETO", 0.5)
+    chamadas = []
+    monkeypatch.setattr(tradutor, "traduzir_lote",
+                        lambda ts, **kw: chamadas.extend(ts) or ["x"])
+    doc = _doc("O vatapá é um prato paraense à base de dendê e camarão "
+               "seco, servido com arroz branco.")
+    monkeypatch.setattr(rag, "search",
+                        lambda *a, **kw: ([(doc, 0.67, "c")], {}))
+    r = _processar_query(QueryIn(question="o que é o vatapá?",
+                                 mode="rag", collections=["c"]))
+    assert "vatapá" in r["answer"] and "*(traduzido)*" not in r["answer"]
+    assert chamadas == []
+
+
+def test_reparo_de_enfase_colada_na_resposta_direta(cenario, monkeypatch):
+    """Bug real de extração 13/09: o trafilatura perde os espaços das bordas
+    de <strong> — "select**New** >**Project**" renderiza "selectNew
+    >Project". A resposta direta em PT com ênfase colada sai com espaços."""
+    base, rag = cenario
+    monkeypatch.setattr(base.config, "SCORE_DIRETO", 0.5)
+    doc = _doc("Passos do tutorial: no menu Arquivo, selecione**Novo** "
+               ">**Projeto** e siga o assistente.")
+    monkeypatch.setattr(rag, "search",
+                        lambda *a, **kw: ([(doc, 0.67, "c")], {}))
+    r = _processar_query(QueryIn(question="como crio um projeto?",
+                                 mode="rag", collections=["c"]))
+    assert "selecione **Novo**" in r["answer"]
+    assert "selecione**Novo**" not in r["answer"]
+
+
 def test_digest_pedido_de_codigo_extrai_bloco_da_base(monkeypatch):
     """Pedido do dono 12/09 ("hello world em qualquer linguagem com base no
     que tenho no qdrant, sem recorrer a llm"): a pergunta pede código e o

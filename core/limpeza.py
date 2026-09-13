@@ -198,6 +198,49 @@ def limpar_dump_hf(texto: str) -> str:
     return novo if novo.strip() else texto
 
 
+# ---------- ênfase colada (extração de web perde os espaços de <strong>) ----
+# O trafilatura devolve "select**New** >**Project**" — os espaços das bordas
+# das tags de ênfase somem e o markdown renderiza tudo colado ("selectNew
+# >Project"; caso real do dono 13/09 no tutorial da MS Learn). O reparo põe
+# espaço entre o vizinho e a cerca ** — só na prosa: dentro de bloco cercado
+# o ** pode ser operador de exponenciação e o código é VERBATIM.
+_RE_CERCA = re.compile(r"(```[\w+\-#.]*(?:[ \t]*\r?\n).*?```)", re.S)
+_RE_NEGRITO = re.compile(r"\*\*([^*\n]+?)\*\*")
+
+# pontuação que ACOLHE o negrito (fica colada de propósito): "(**x**)" e
+# "**fim**." são tipografia natural — o espaço entra nos OUTROS vizinhos
+# (palavra, >, =, /…), que é onde o render junta tudo ("selectNew")
+_ANEXA_ANTES = set('([{"\'`')
+_ANEXA_DEPOIS = set(')]}\'"`.,;:!?%')
+
+
+def _espacar_negrito(prosa: str) -> str:
+    def _fix(m: re.Match) -> str:
+        antes = prosa[m.start() - 1] if m.start() else ""
+        depois = prosa[m.end()] if m.end() < len(prosa) else ""
+        esp_antes = (antes and not antes.isspace()
+                     and antes not in _ANEXA_ANTES)
+        esp_depois = (depois and not depois.isspace()
+                      and depois not in _ANEXA_DEPOIS)
+        return (" " if esp_antes else "") + f"**{m.group(1)}**" \
+            + (" " if esp_depois else "")
+    return _RE_NEGRITO.sub(_fix, prosa)
+
+
+def reparar_enfase(texto: str) -> str:
+    """Espaço nas bordas do negrito FORA de blocos de código (o trafilatura
+    perde os espaços de <strong>/<em> nas bordas). Texto sem ** ou com as
+    cercas já corretas volta IDÊNTICO."""
+    if not texto or "**" not in texto:
+        return texto
+    # split COM GRUPO de captura: índices pares = prosa, ímpares = cercas
+    partes = _RE_CERCA.split(texto)
+    if len(partes) == 1:
+        return _espacar_negrito(texto)
+    return "".join(p if i % 2 else _espacar_negrito(p)
+                   for i, p in enumerate(partes))
+
+
 # ---------- HTML cru → texto legível (resposta direta da base) ----------
 
 # marcadores de PÁGIna inteira — usado junto com DENSIDADE de tags (um

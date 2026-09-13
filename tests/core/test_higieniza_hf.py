@@ -8,7 +8,7 @@ blinda o digest); o `hf.dados` NOVO grava só o conteúdo.
 """
 from types import SimpleNamespace
 
-from core.limpeza import limpar_dump_hf
+from core.limpeza import limpar_dump_hf, reparar_enfase
 
 _DUMP = (
     "# codeparrot/github-code · default/train (linhas 401–402)\n"
@@ -62,6 +62,35 @@ def test_e_idempotente():
     """Limpar 2× = limpar 1× (a higienização pode rodar de novo na coleção)."""
     uma = limpar_dump_hf(_DUMP)
     assert limpar_dump_hf(uma) == uma
+
+
+# ---------- ênfase colada (trafilatura perde os espaços de <strong>) --------
+# Bug real do dono 13/09: "select**New** >**Project**" renderiza "selectNew
+# >Project" — o `**` vira <strong> no markdown e engole a borda.
+
+def test_reparar_enfase_espaca_as_bordas_do_negrito():
+    fixo = reparar_enfase("From the File menu, select**New** >**Project** .")
+    assert "select **New**" in fixo
+    assert "> **Project**" in fixo
+    assert "select**New**" not in fixo
+
+
+def test_reparar_enfase_nao_toca_em_bloco_de_codigo():
+    """`**` DENTRO de cerca é sintaxe (potência em python, comment block em
+    C/JS) — o reparo é fence-aware, a cerca sai intacta."""
+    c = ("texto com**ênfase**colada\n\n```python\nx = x**2 + y**2\n"
+         "doc = /** nota */\n```")
+    fixo = reparar_enfase(c)
+    assert "x = x**2 + y**2" in fixo          # dentro da cerca: intocado
+    assert "com **ênfase** colada" in fixo    # fora da cerca: reparado
+
+
+def test_reparar_enfase_sem_negrito_volta_intacto():
+    """Texto sem `**` (o caso comum) sai IGUAL — e é idempotente."""
+    prosa = "O tucupi é um caldo amarelo extraído da mandioca brava.\n"
+    assert reparar_enfase(prosa) == prosa
+    ja_ok = "selecione **Novo** > **Projeto**"
+    assert reparar_enfase(ja_ok) == ja_ok   # já espaçado: não duplica espaço
 
 
 def test_higienizar_colecao_reembeda_o_dump_no_mesmo_id(monkeypatch):

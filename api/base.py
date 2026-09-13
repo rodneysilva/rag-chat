@@ -2030,11 +2030,27 @@ def _processar_query(body: QueryIn, log=None, on_token=None):
                                 log("⛳ pedido de código — a resposta direta "
                                     "é o BLOCO extraído da base (verbatim)",
                                     "geração")
+                            else:
+                                # ênfase colada da extração de web
+                                # ("select**New**" → "select **New**")
+                                resposta_direta = limpeza.reparar_enfase(
+                                    resposta_direta)
                     except Exception as e:
                         log(f"⚠️ sanitização do fragmento falhou "
                             f"({str(e)[:80]}) — seguindo para o modelo",
                             "geração")
                     if resposta_direta is not None:
+                        # ⇄ TRADUÇÃO DA RESPOSTA DIRETA (pedido do dono 13/09:
+                        # "está vindo em inglês" — a resposta direta não passava
+                        # pelo tradutor do digest): pergunta PT + fragmento EN
+                        # sai traduzida (opus-mt CPU — a LLM segue desligada)
+                        _trad = rag.traduzir_resposta_direta(
+                            str(body.question), resposta_direta)
+                        if _trad != resposta_direta:
+                            resposta_direta = _trad
+                            log("⇄ resposta direta em inglês — traduzida pelo "
+                                "tradutor local (mesma regra do digest)",
+                                "geração")
                         log(f"🎯 score {top_score:.3f} ≥ {config.SCORE_DIRETO} — "
                             "a base responde por si: resposta DIRETA do fragmento "
                             "(sem consulta à LLM)", "geração")
